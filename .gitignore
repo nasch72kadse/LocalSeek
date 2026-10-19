@@ -1,0 +1,33 @@
+# Xcode / Build
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+.DS_Store
+
+# XcodeGen generiert .xcodeproj aus project.yml → nicht committen
+LocalSeek.xcodeproj/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Modelle & native Binärbibliotheken (werden separat verifiziert eingebunden, Spec §10)
+Models/*.gguf
+Native/**/*.a
+Native/**/*.dylib
+
+# Lokale Zugangsdaten, Signierschlüssel und Suchindex
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
