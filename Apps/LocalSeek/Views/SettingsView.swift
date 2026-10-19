@@ -19,7 +19,7 @@ struct SettingsView: View {
                     if let error = shortcut.error { Text(error).foregroundStyle(.red) }
                 }
                 Section("Hintergrundarbeit") {
-                    Toggle("OCR und Einbettungen im Akkubetrieb pausieren", isOn: Binding(get: { index.pauseHeavyOnBattery }, set: index.setPauseHeavyOnBattery))
+                    Toggle("OCR und Einbettungen im Akkubetrieb pausieren", isOn: Binding(get: { index.pauseHeavyOnBattery }, set: { index.setPauseHeavyOnBattery($0) }))
                     Text("Maximal zwei Inferenz-Threads. Bei hoher Temperatur pausiert der Index; Suchanfragen haben Vorrang.").font(.caption).foregroundStyle(.secondary)
                     Button(index.isPaused ? "Fortsetzen" : "Pausieren") { index.setPaused(!index.isPaused) }
                     Text(index.pauseReason ?? index.activity).foregroundStyle(.secondary)
