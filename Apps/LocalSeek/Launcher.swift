@@ -57,26 +57,44 @@ enum SelfTest {
             try await EmbeddingIndexer(provider: provider, store: BruteForceVectorStore(db: db)).indexEmbeddings(modelId: "selftest", into: db)
             let engine = HybridSearchEngine(db: db, provider: provider, store: BruteForceVectorStore(db: db), modelId: "selftest")
             var correct = 0, top3 = 0, times: [Double] = [], failedIndices: [Int] = []
+            var referenceTop3: [[Int64]] = []
             for (number, doc) in documents.enumerated() {
                 let began = Date(); let hits = try await engine.search(doc.2, strategy: .semantic)
                 times.append(Date().timeIntervalSince(began) * 1000)
+                referenceTop3.append(hits.prefix(3).map(\.chunkId))
                 if hits.first?.filename == doc.0 { correct += 1 } else { failedIndices.append(number) }
                 if hits.prefix(3).contains(where: { $0.filename == doc.0 }) { top3 += 1 }
             }
             if correct != documents.count { print("Synthetic quality: \(correct)/\(documents.count), failed fixture indices: \(failedIndices)") }
-            guard top3 == documents.count, correct >= 9, try db.checkIntegrity(repair: false).removedInvalidVectors == 0 else { throw EmbeddingError.inferenceFailed }
+            guard top3 == documents.count, correct >= 9 else {
+                print("Synthetic retrieval quality failed: top1=\(correct), top3=\(top3), total=\(documents.count)")
+                throw EmbeddingError.inferenceFailed
+            }
+            guard try db.checkIntegrity(repair: false).removedInvalidVectors == 0 else {
+                print("Self-test vector integrity check failed")
+                throw EmbeddingError.inferenceFailed
+            }
             var report: [String: Any] = ["passed": true, "offlineModel": true, "crossLingualTop1": correct, "crossLingualTop3": top3, "top1MissFixtureIndices": failedIndices, "qualityQueries": documents.count, "qualityCorpus": "synthetic English passages / German questions", "queryP95Milliseconds": times.sorted()[Int(ceil(Double(times.count) * 0.95)) - 1]]
             try verifyBundledOCR(at: root)
             report["isolatedOCR"] = true
             let graph = AdaptiveVectorIndex(database: db, minimumVectors: 1)
             guard try await graph.prepare(modelId: "selftest", dimensions: provider.dimensions) else {
+                print("Self-test accelerated vector index was not prepared")
                 throw EmbeddingError.inferenceFailed
             }
             let accelerated = HybridSearchEngine(db: db, provider: provider,
                 store: AdaptiveVectorStore(db: db, index: graph), modelId: "selftest")
-            let acceleratedHits = try await accelerated.search(documents[0].2, strategy: .semantic)
-            guard acceleratedHits.first?.filename == documents[0].0 else { throw EmbeddingError.inferenceFailed }
+            // Acceleration must preserve the exact search's ranking on this small
+            // corpus, including any retrieval misses already measured above.
+            for (number, doc) in documents.enumerated() {
+                let hits = try await accelerated.search(doc.2, strategy: .semantic)
+                guard hits.prefix(3).map(\.chunkId) == referenceTop3[number] else {
+                    print("Accelerated ranking differs from exact search for fixture \(number)")
+                    throw EmbeddingError.inferenceFailed
+                }
+            }
             report["acceleratedVectorSearch"] = true
+            report["acceleratedAgreementQueries"] = documents.count
             graph.release()
             if benchmark {
                 let probe = await MainActor.run { MainThreadProbe() }
