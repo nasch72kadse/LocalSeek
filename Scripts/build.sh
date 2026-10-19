@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source Scripts/local-build-config.sh
+if [[ "${CONFIGURATION:-Release}" == Release && "$LOCALSEEK_PUBLISH_RELEASE" == 1 ]]; then
+  bash Scripts/publish-release.sh --check
+  export LOCALSEEK_BUILT_COMMIT="$(git rev-parse HEAD)"
+fi
 Scripts/build-native.sh
 command -v xcodegen >/dev/null || { echo 'XcodeGen fehlt: brew install xcodegen' >&2; exit 1; }
 xcodegen generate
@@ -18,6 +23,9 @@ printf '%s\n' "${CONFIGURATION:-Release}" > build/last-built-configuration.txt
 # A successful Release build always ends with the transferable, verified DMG.
 if [[ "${CONFIGURATION:-Release}" == 'Release' ]]; then
   Scripts/package.sh --skip-build
+  if [[ "$LOCALSEEK_PUBLISH_RELEASE" == 1 ]]; then
+    bash Scripts/publish-release.sh --publish
+  fi
 else
   printf 'Debug-Build fertig. Für die übertragbare DMG einen Release-Build ausführen.\n'
 fi

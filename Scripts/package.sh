@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source Scripts/local-build-config.sh
 case "${1:-}" in
   '') exec Scripts/build.sh ;;
   --skip-build) ;;

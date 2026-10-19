@@ -65,6 +65,11 @@ Verwendet wird ein GitHub-Standard-Mac-Runner im enthaltenen Kontingent. Details
 Downloads, Kostenlimit und den fünf Apple-Secrets:
 [GitHub Actions einrichten](docs/GITHUB-ACTIONS.md).
 
+Alternativ kann der eigene Mac signierte und notarisierte DMGs direkt als
+GitHub Release veröffentlichen. Dafür `LOCALSEEK_PUBLISH_RELEASE=1 Scripts/build.sh`
+verwenden; lokale Konfiguration und Schlüsselbund-Zugänge stehen in
+[Lokale Releases](docs/LOCAL-RELEASE.md). Dieser Weg benötigt keinen GitHub Runner.
+
 Benötigt: vollständiges Xcode mit akzeptierter Lizenz/Command Line Tools,
 Git, CMake und XcodeGen. Zum Beispiel `brew install cmake xcodegen`.
 Homebrew-llama.cpp wird für diesen Build nicht benötigt.
