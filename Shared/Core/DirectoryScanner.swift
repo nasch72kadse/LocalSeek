@@ -23,7 +23,7 @@ public struct DirectoryScanner: Sendable {
         let root = relativePath.isEmpty ? sourceRoot : sourceRoot.appendingPathComponent(relativePath)
         do {
             return try withoutFileMaterialization {
-                try validateAncestors(of: relativePath, under: sourceRoot)
+                if !relativePath.isEmpty { try validateAncestors(of: relativePath, under: sourceRoot) }
                 let rootInfo = try metadata.metadata(for: root)
                 guard rootInfo.isDirectory, !rootInfo.isDataless, !rootInfo.isSymbolicLink else {
                     throw ScanError.notEnumerable

@@ -82,6 +82,14 @@ struct OCRService: Sendable {
         }
         try Self.checkpoint(context)
         guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+            var detail = "reason=\(process.terminationReason.rawValue) status=\(process.terminationStatus)"
+            if let data = try? boundedData(fileURL: output, maxBytes: 1024),
+               let diagnostic = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let domain = diagnostic["domain"] as? String, let code = diagnostic["code"] as? Int {
+                let safeDomain = String(domain.filter { $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" }.prefix(128))
+                detail += " domain=\(safeDomain) code=\(code)"
+            }
+            FileHandle.standardError.write(Data(("LocalSeek OCR helper failed: " + detail + "\n").utf8))
             throw ExtractionError.ocrFailed
         }
         do {

@@ -40,4 +40,12 @@ do {
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: result.path)
     watchdog.cancel()
     exit(0)
-} catch { exit(2) }
+} catch {
+    // Numeric/domain diagnostics only: never serialize paths or recognized text.
+    let failure = error as NSError
+    let diagnostic: [String: Any] = ["domain": String(failure.domain.prefix(128)), "code": failure.code]
+    if let data = try? JSONSerialization.data(withJSONObject: diagnostic) {
+        try? data.write(to: URL(fileURLWithPath: args[2]), options: .atomic)
+    }
+    exit(2)
+}
