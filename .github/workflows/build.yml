@@ -1,0 +1,158 @@
+name: LocalSeek Build
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: localseek-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build Apple Silicon DMG
+    # Standard runner, eligible for included minutes; no paid larger runner.
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write # Remove this workflow's superseded artifacts.
+    defaults:
+      run:
+        shell: bash
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare build tools
+        run: |
+          [[ "$(uname -m)" == arm64 ]]
+          if ! command -v cmake >/dev/null; then brew install cmake; fi
+          if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
+          mkdir -p build/reports
+          {
+            sw_vers
+            uname -m
+            xcodebuild -version
+            swift --version
+            cmake --version
+            xcodegen --version
+          } | tee build/reports/environment.txt
+
+      - name: Read pinned model checksum
+        id: model
+        run: echo "sha256=$(plutil -extract sha256 raw Models/manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore model cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ci-model
+          key: localseek-model-${{ steps.model.outputs.sha256 }}
+
+      - name: Fetch and verify model
+        timeout-minutes: 10
+        run: bash Scripts/ci/prepare-model.sh
+
+      - name: Validate CI helpers
+        run: python3 -m unittest discover -s Tests/BuildTools -v
+
+      - name: Restore dependency downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/Dependencies/llama.cpp
+            build/SourcePackages
+          key: localseek-sources-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Scripts/build-native.sh') }}
+
+      - name: Build test prerequisites
+        timeout-minutes: 15
+        run: CONFIGURATION=Debug Scripts/build.sh
+
+      - name: Run unit and integration tests
+        timeout-minutes: 12
+        run: |
+          python3 Scripts/check-migration-sql.py | tee build/reports/migration.json
+          Scripts/test.sh 2>&1 | tee build/reports/tests.log
+
+      - name: Prepare Apple signing on main
+        if: github.ref == 'refs/heads/main'
+        timeout-minutes: 3
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: bash Scripts/ci/prepare-signing.sh
+
+      - name: Build and verify release DMG
+        timeout-minutes: 25
+        run: Scripts/build.sh
+
+      - name: Verify offline startup and bundled components
+        timeout-minutes: 5
+        run: Scripts/verify-offline.sh
+
+      - name: Prune superseded downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Scripts/ci/prune-artifacts.py
+
+      - name: Upload complete DMG
+        id: dmg
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: LocalSeek-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/LocalSeek.dmg
+            build/LocalSeek.dmg.sha256
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Keep the newest DMG per branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Scripts/ci/prune-artifacts.py
+
+      - name: Build summary
+        env:
+          ARTIFACT_URL: ${{ steps.dmg.outputs.artifact-url }}
+        run: |
+          {
+            echo '### LocalSeek DMG'
+            printf 'Branch: `%s` · Commit: `%s`\n\n' "$GITHUB_REF_NAME" "$GITHUB_SHA"
+            printf '[Fertige Datei herunterladen](%s)\n\n' "$ARTIFACT_URL"
+            if [[ -n "${LOCALSEEK_NOTARY_PROFILE:-}" ]]; then
+              echo 'Developer ID signiert und notariert.'
+            else
+              echo 'Privat signiert, nicht notariert. Apple-Secrets sind nur auf main aktiv.'
+            fi
+            echo 'Enthält Modell und OCR-Helper. Ziel: Apple Silicon, macOS 14+.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostics if a check fails
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: LocalSeek-diagnostics-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/reports/environment.txt
+            build/reports/tests.log
+            build/reports/migration.json
+            build/reports/offline.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Delete temporary signing credentials
+        if: always()
+        run: bash Scripts/ci/cleanup-signing.sh

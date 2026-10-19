@@ -18,6 +18,10 @@ EXPECTED=e011debc1208e31bf7b6aebee2d9fc8bd2ca11694a77ed66ac9d0c9d0a877c93
 [[ -f "$MODEL" ]] || { echo 'Modell fehlt. LOCALSEEK_MODEL auf die lokale GGUF-Datei setzen.' >&2; exit 1; }
 [[ "$(shasum -a 256 "$MODEL" | cut -d ' ' -f 1)" == "$EXPECTED" ]] || { echo 'Modell-Prüfsumme stimmt nicht.' >&2; exit 1; }
 SIGNING_ID="${LOCALSEEK_SIGN_IDENTITY:--}"
+NOTARY_ARGS=(--keychain-profile "${LOCALSEEK_NOTARY_PROFILE:-}")
+if [[ -n "${LOCALSEEK_NOTARY_KEYCHAIN:-}" ]]; then
+  NOTARY_ARGS+=(--keychain "$LOCALSEEK_NOTARY_KEYCHAIN")
+fi
 if [[ -n "${LOCALSEEK_NOTARY_PROFILE:-}" && "$SIGNING_ID" == '-' ]]; then
   echo 'Notarisierung benötigt LOCALSEEK_SIGN_IDENTITY mit einer Developer-ID-Signatur.' >&2
   exit 1
@@ -48,7 +52,7 @@ codesign "${SIGN_ARGS[@]}" "$APP"
 Scripts/verify-bundle.sh "$APP"
 ditto -c -k --keepParent "$APP" "$DEST/LocalSeek.zip"
 if [[ -n "${LOCALSEEK_NOTARY_PROFILE:-}" ]]; then
-  xcrun notarytool submit "$DEST/LocalSeek.zip" --keychain-profile "$LOCALSEEK_NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$DEST/LocalSeek.zip" "${NOTARY_ARGS[@]}" --wait --timeout 10m
   xcrun stapler staple "$APP"
   xcrun stapler validate "$APP"
   ditto -c -k --keepParent "$APP" "$DEST/LocalSeek-notarized.zip"
@@ -80,7 +84,7 @@ if [[ "$SIGNING_ID" != '-' ]]; then
   codesign --force --sign "$SIGNING_ID" --timestamp "$DMG"
 fi
 if [[ -n "${LOCALSEEK_NOTARY_PROFILE:-}" ]]; then
-  xcrun notarytool submit "$DMG" --keychain-profile "$LOCALSEEK_NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$DMG" "${NOTARY_ARGS[@]}" --wait --timeout 10m
   xcrun stapler staple "$DMG"
   xcrun stapler validate "$DMG"
 fi

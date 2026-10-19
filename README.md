@@ -58,6 +58,13 @@ entschlüsselten S/MIME-/PGP-Inhalte und keine Anhang-Indizierung.
 
 ## Selbst bauen
 
+Entwicklung erfolgt auf `dev`, der stabile Stand liegt auf `main`. GitHub Actions
+baut nach einem Push auf einen dieser Branches automatisch eine vollständige DMG
+und stellt sie nach erfolgreichen Prüfungen als Download beim Workflow-Lauf bereit.
+Verwendet wird ein GitHub-Standard-Mac-Runner im enthaltenen Kontingent. Details zu
+Downloads, Kostenlimit und den fünf Apple-Secrets:
+[GitHub Actions einrichten](docs/GITHUB-ACTIONS.md).
+
 Benötigt: vollständiges Xcode mit akzeptierter Lizenz/Command Line Tools,
 Git, CMake und XcodeGen. Zum Beispiel `brew install cmake xcodegen`.
 Homebrew-llama.cpp wird für diesen Build nicht benötigt.

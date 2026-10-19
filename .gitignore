@@ -31,3 +31,7 @@ Native/**/*.dylib
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+*.keychain
+*.keychain-db
+__pycache__/
+*.pyc
