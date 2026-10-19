@@ -17,7 +17,8 @@ guard args.count == 6, let timeout = Double(args[4]), timeout.isFinite,
 let deadline = ProcessInfo.processInfo.systemUptime + timeout + 2
 let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "LocalSeek.OCR.watchdog"))
 watchdog.schedule(deadline: .now(), repeating: .milliseconds(100))
-watchdog.setEventHandler {
+// Top-level code is MainActor-isolated. This callback runs on its own queue.
+watchdog.setEventHandler { @Sendable [owner, deadline] in
     if getppid() != owner || ProcessInfo.processInfo.systemUptime >= deadline { _exit(124) }
 }
 watchdog.resume()
