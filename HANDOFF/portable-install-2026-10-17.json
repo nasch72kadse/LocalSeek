@@ -1,0 +1,12 @@
+{
+  "crossLingualTop1" : 9,
+  "crossLingualTop3" : 10,
+  "offlineModel" : true,
+  "passed" : true,
+  "qualityCorpus" : "synthetic English passages \/ German questions",
+  "qualityQueries" : 10,
+  "queryP95Milliseconds" : 5.4299831390380859,
+  "top1MissFixtureIndices" : [
+    0
+  ]
+}

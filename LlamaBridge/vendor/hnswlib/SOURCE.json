@@ -1,0 +1,7 @@
+{
+  "upstream": "https://github.com/nmslib/hnswlib",
+  "tag": "v0.9.0",
+  "revision": "d9b3608c83d83b46c96e25088cb1d729b29dcfe9",
+  "changes": "none; headers vendored verbatim",
+  "license": "Apache-2.0"
+}

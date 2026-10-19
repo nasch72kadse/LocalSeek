@@ -1,0 +1,1 @@
+{"nativeChecksPassed":true,"vectors":100000,"dimensions":384,"buildSeconds":44.0337,"candidateSearchP95Milliseconds":0.658292,"recallAt10Within256Candidates":1,"queries":32,"fixture":"128 Gaussian clusters; distinct normalized vectors"}

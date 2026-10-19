@@ -1,0 +1,12 @@
+{
+  "llama.cpp": {"tag": "v0.6.0", "revision": "d81235049384534c167caea52b85a694f6103d14"},
+  "ggml": {"source": "vendored with pinned llama.cpp", "version": "0.26.0"},
+  "hnswlib": {"tag": "v0.9.0", "revision": "d9b3608c83d83b46c96e25088cb1d729b29dcfe9", "source": "vendored unmodified headers", "license": "Apache-2.0"},
+  "architecture": "arm64",
+  "minimumMacOS": "14.0",
+  "linkage": "static",
+  "metalLibrary": "embedded",
+  "dynamicBackendLoading": false,
+  "openMP": false,
+  "cpuNativeArchitecture": false
+}

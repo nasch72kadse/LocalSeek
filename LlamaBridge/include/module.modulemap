@@ -1,0 +1,4 @@
+module LlamaBridge {
+    header "localseek_llama.h"
+    export *
+}

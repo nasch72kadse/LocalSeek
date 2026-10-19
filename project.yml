@@ -1,0 +1,168 @@
+name: LocalSeek
+options:
+  bundleIdPrefix: com.localseek
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    exactVersion: "7.11.1"
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    exactVersion: "0.9.20"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_HARDENED_RUNTIME: YES
+    GENERATE_INFOPLIST_FILE: YES
+    ARCHS: arm64
+    CURRENT_PROJECT_VERSION: 3
+    MARKETING_VERSION: "1.1.0"
+    INFOPLIST_KEY_CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+    INFOPLIST_KEY_CFBundleShortVersionString: "$(MARKETING_VERSION)"
+
+targets:
+
+  # Gepinnte statische llama/ggml-Bibliotheken; keine Homebrew-Laufzeitabhängigkeit.
+  LlamaBridge:
+    type: library.static
+    platform: macOS
+    sources:
+      - LlamaBridge
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: LlamaBridge
+        DEFINES_MODULE: YES
+        MODULEMAP_FILE: LlamaBridge/include/module.modulemap
+        CLANG_CXX_LANGUAGE_STANDARD: "c++17"
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/build/Native/include
+          - $(SRCROOT)/LlamaBridge/include
+
+  # Gemeinsamer Code: DTOs/Modelle + Persistenz (SQLite via GRDB). Framework.
+  SharedCore:
+    type: framework
+    platform: macOS
+    sources:
+      - Shared
+    dependencies:
+      - package: GRDB
+        product: GRDB
+      - package: ZIPFoundation
+        product: ZIPFoundation
+      - target: LlamaBridge
+        link: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.localseek.shared
+        DEFINES_MODULE: YES
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/LlamaBridge/include
+        OTHER_LDFLAGS: [-lc++]
+
+  # Vision is isolated so a native OCR stall can be killed without losing the queue.
+  LocalSeekOCR:
+    type: tool
+    platform: macOS
+    sources:
+      - Apps/LocalSeekOCR
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.localseek.ocr
+        SKIP_INSTALL: YES
+
+  # Haupt-App: SwiftUI MenuBar, OCR läuft im begrenzten Hilfsprozess.
+  LocalSeek:
+    type: application
+    platform: macOS
+    sources:
+      - Apps/LocalSeek
+    dependencies:
+      - target: SharedCore
+        embed: true
+      - target: LlamaBridge
+      - target: LocalSeekOCR
+        link: false
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.localseek.app
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: "LocalSeek"
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/LlamaBridge/include
+        LIBRARY_SEARCH_PATHS:
+          - $(SRCROOT)/build/Native/lib
+        OTHER_LDFLAGS:
+          - -lc++
+          - -lllama
+          - -lggml
+          - -lggml-base
+          - -lggml-cpu
+          - -lggml-metal
+          - -lggml-blas
+          - -framework Accelerate
+          - -framework Metal
+          - -framework Foundation
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+
+  # Unit-Tests gegen SharedCore.
+  LocalSeekTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/UnitTests
+      - Apps/LocalSeek/IndexService.swift
+      - Apps/LocalSeek/LlamaEmbeddingProvider.swift
+      - Apps/LocalSeek/ModelLocator.swift
+    dependencies:
+      - target: SharedCore
+      - target: LlamaBridge
+      - target: LocalSeekOCR
+        link: false
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.localseek.tests
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/LlamaBridge/include
+        LIBRARY_SEARCH_PATHS:
+          - $(SRCROOT)/build/Native/lib
+        OTHER_LDFLAGS:
+          - -lc++
+          - -lllama
+          - -lggml
+          - -lggml-base
+          - -lggml-cpu
+          - -lggml-metal
+          - -lggml-blas
+          - -framework Accelerate
+          - -framework Metal
+          - -framework Foundation
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+
+schemes:
+  LocalSeek:
+    build:
+      targets:
+        LocalSeek: all
+        SharedCore: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LocalSeekTests

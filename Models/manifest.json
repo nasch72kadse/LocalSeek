@@ -1,0 +1,15 @@
+{
+  "name": "multilingual-e5-small-q8_0.gguf",
+  "upstream": "intfloat/multilingual-e5-small",
+  "conversion": "TwinSunsLLC/multilingual-e5-small-gguf",
+  "download": "https://huggingface.co/TwinSunsLLC/multilingual-e5-small-gguf/resolve/main/multilingual-e5-small-q8_0.gguf",
+  "sha256": "e011debc1208e31bf7b6aebee2d9fc8bd2ca11694a77ed66ac9d0c9d0a877c93",
+  "dimensions": 384,
+  "maximumTokens": 511,
+  "documentPrefix": "passage: ",
+  "queryPrefix": "query: ",
+  "pooling": "mean",
+  "normalization": "l2",
+  "license": "MIT",
+  "automaticDownload": false
+}

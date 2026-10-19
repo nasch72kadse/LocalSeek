@@ -1,0 +1,1 @@
+{"rawMigrationSQLPassed": true, "triggers": 4, "sqlite": "3.53.4", "scope": "v6/v7 raw SQL; minimal fixture; not Swift/GRDB integration"}
