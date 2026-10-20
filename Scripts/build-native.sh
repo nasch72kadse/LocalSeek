@@ -12,6 +12,8 @@ fi
 [[ "$(git -C "$SOURCE" rev-parse HEAD)" == "$PIN" ]] || { echo 'Unerwartete llama.cpp-Revision' >&2; exit 1; }
 cmake -S "$SOURCE" -B build/NativeBuild \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  "-DCMAKE_C_FLAGS=-ffile-prefix-map=\"$ROOT\"=/LocalSeek" \
+  "-DCMAKE_CXX_FLAGS=-ffile-prefix-map=\"$ROOT\"=/LocalSeek" \
   -DCMAKE_INSTALL_PREFIX="$ROOT/build/Native" -DBUILD_SHARED_LIBS=OFF \
   -DGGML_BACKEND_DL=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF \
   -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DGGML_METAL_MACOSX_VERSION_MIN=14.0 \

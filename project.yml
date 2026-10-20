@@ -22,8 +22,11 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     GENERATE_INFOPLIST_FILE: YES
     ARCHS: arm64
-    CURRENT_PROJECT_VERSION: 3
-    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: 4
+    MARKETING_VERSION: "1.1.1"
+    OTHER_CFLAGS: ["$(inherited)", "-ffile-prefix-map=$(SRCROOT)=/LocalSeek"]
+    OTHER_CPLUSPLUSFLAGS: ["$(inherited)", "-ffile-prefix-map=$(SRCROOT)=/LocalSeek"]
+    OTHER_SWIFT_FLAGS: ["$(inherited)", "-debug-prefix-map", "$(SRCROOT)=/LocalSeek", "-file-prefix-map", "$(SRCROOT)=/LocalSeek"]
     INFOPLIST_KEY_CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
     INFOPLIST_KEY_CFBundleShortVersionString: "$(MARKETING_VERSION)"
 

@@ -9,7 +9,7 @@ git ls-files --cached --others --exclude-standard -- \
   Scripts/local-build-config.sh Scripts/publish-release.sh Scripts/publish-release.py \
   Scripts/verify-offline.sh Scripts/offline.sb \
   Scripts/test.sh Scripts/test-release.sh Scripts/release-tests.py Scripts/check-migration-sql.py Tests \
-  Scripts/source-checksums.sh Scripts/verify-bundle.sh Scripts/verify-artifact.sh Scripts/ci \
+  Scripts/source-checksums.sh Scripts/verify-bundle.sh Scripts/check-bundle-privacy.py Scripts/verify-artifact.sh Scripts/ci \
   .github/workflows/build.yml \
   Models/manifest.json Models/native-dependencies.json Licenses \
   README.md THIRD_PARTY_NOTICES.md HANDOFF/INSTALLATION.md \
