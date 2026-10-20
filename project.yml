@@ -128,6 +128,7 @@ targets:
       - Apps/LocalSeek/IndexService.swift
       - Apps/LocalSeek/LlamaEmbeddingProvider.swift
       - Apps/LocalSeek/ModelLocator.swift
+      - Apps/LocalSeek/SettingsWindowController.swift
     dependencies:
       - target: SharedCore
       - target: LlamaBridge
