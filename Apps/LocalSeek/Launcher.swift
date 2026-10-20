@@ -129,7 +129,9 @@ enum SelfTest {
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw ExtractionError.unreadable }
         let document = try ImageOCRExtractor().extract(fileURL: url, context: .init())
-        guard document.segments.contains(where: { $0.text.contains("LocalSeek") }) else {
+        guard document.segments.contains(where: {
+            $0.text.lowercased().filter { !$0.isWhitespace }.contains("localseek")
+        }) else {
             throw ExtractionError.ocrFailed
         }
     }

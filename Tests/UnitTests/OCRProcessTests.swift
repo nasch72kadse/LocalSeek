@@ -104,7 +104,7 @@ final class OCRProcessTests: XCTestCase {
             fi
             """)
         let began = ProcessInfo.processInfo.systemUptime
-        let result = try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+        let result = try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper))
             .extract(fileURL: fixture.image, context: .init(ocrTimeout: 0.8))
         XCTAssertEqual(result.segments.first?.text, "CPU fallback")
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - began, 1.3)
@@ -115,20 +115,19 @@ final class OCRProcessTests: XCTestCase {
         try assertStoppedAndCleaned(fixture)
     }
 
-    func testCompatibilityPreferenceAvoidsStartingTheProblematicAccelerator() throws {
+    func testSuccessfulAccurateOCRNeverStartsTheFallback() throws {
         let fixture = try fixture(script: """
             if [ "$6" = compatibility ]; then
-              printf '%s' '["Local CPU OCR"]' > "$2"
-            else
-              touch "$(dirname "$0")/accelerator.started"
-              exec /bin/sleep 60
+              touch "$(dirname "$0")/fallback.started"
+              exit 1
             fi
+            printf '%s' '["Accurate OCR"]' > "$2"
             """)
-        let result = try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: true))
+        let result = try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper))
             .extract(fileURL: fixture.image, context: .init(ocrTimeout: 0.8))
-        XCTAssertEqual(result.segments.first?.text, "Local CPU OCR")
+        XCTAssertEqual(result.segments.first?.text, "Accurate OCR")
         XCTAssertFalse(FileManager.default.fileExists(atPath:
-            fixture.root.appendingPathComponent("accelerator.started").path))
+            fixture.root.appendingPathComponent("fallback.started").path))
         try assertStoppedAndCleaned(fixture)
     }
 
@@ -141,7 +140,7 @@ final class OCRProcessTests: XCTestCase {
             exec /bin/sleep 60
             """)
         let worker = Task.detached {
-            try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+            try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper))
                 .extract(fileURL: fixture.image, context: .init(ocrTimeout: 2))
         }
         let marker = fixture.root.appendingPathComponent("retry.started")
@@ -165,7 +164,7 @@ final class OCRProcessTests: XCTestCase {
             exec /bin/sleep 60
             """)
         let began = ProcessInfo.processInfo.systemUptime
-        XCTAssertThrowsError(try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+        XCTAssertThrowsError(try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper))
             .extract(fileURL: fixture.image, context: .init(ocrTimeout: 1))) {
                 XCTAssertEqual($0 as? ExtractionError, .ocrTimedOut)
             }
@@ -182,7 +181,7 @@ final class OCRProcessTests: XCTestCase {
             trap '' TERM
             exec /bin/sleep 60
             """)
-        XCTAssertThrowsError(try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+        XCTAssertThrowsError(try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper))
             .extract(fileURL: fixture.image, context: .init(ocrTimeout: 0.8))) {
                 XCTAssertEqual($0 as? ExtractionError, .ocrFailed)
             }
@@ -228,8 +227,9 @@ final class OCRProcessTests: XCTestCase {
                                  " " + quoted(helper.path) + " " + arguments, text: "LocalSeek Offline OCR")
         let document = try ImageOCRExtractor(ocr: OCRService(helperURL: raster.helper))
             .extract(fileURL: raster.image, context: .init(ocrTimeout: 30))
-        XCTAssertTrue(document.segments.contains { $0.text.contains("LocalSeek") },
-                      "Vision must recognize text without IP networking, using only local IPC")
+        let text = document.segments.map(\.text).joined(separator: " ")
+        XCTAssertTrue(text.lowercased().filter { !$0.isWhitespace }.contains("localseek"),
+                      "Vision must recognize text without IP networking, using only local IPC: \(text)")
         try assertStoppedAndCleaned(raster)
     }
 

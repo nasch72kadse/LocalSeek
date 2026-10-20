@@ -35,11 +35,10 @@ do {
     request.usesLanguageCorrection = true
     request.recognitionLanguages = languages
     if args[6] == "compatibility" {
-        // Revision 3 can stall compiling an ANE model even with CPU assignments
-        // on macOS 27. Revision 2 uses the older recognizer for this bounded retry.
-        let compatibilityRevision = 2
-        guard VNRecognizeTextRequest.supportedRevisions.contains(compatibilityRevision) else { exit(2) }
-        request.revision = compatibilityRevision
+        // Accurate recognition can stall in ANE model compilation on macOS 27,
+        // including older revisions and explicit CPU assignments. Fast OCR uses
+        // a separate recognition path; keep the normal accurate mode as primary.
+        request.recognitionLevel = .fast
         for (stage, devices) in try request.supportedComputeStageDevices {
             guard let cpu = devices.first(where: {
                 if case .cpu = $0 { return true }; return false

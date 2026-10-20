@@ -9,15 +9,8 @@ import CryptoKit
 /// never retain the single indexing worker or prevent cancellation/shutdown.
 struct OCRService: Sendable {
     private let helperURL: URL?
-    private let preferCompatibility: Bool
 
-    init(helperURL: URL? = nil, preferCompatibility: Bool? = nil) {
-        self.helperURL = helperURL
-        // On macOS 27, starting revision 3 can also delay a subsequent retry in
-        // the system compiler. Avoid entering that path first on affected Macs.
-        self.preferCompatibility = preferCompatibility ??
-            (ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27)
-    }
+    init(helperURL: URL? = nil) { self.helperURL = helperURL }
 
     private static var bundledHelper: URL? {
         let framework = Bundle(for: OCRBundleToken.self).bundleURL
@@ -44,7 +37,7 @@ struct OCRService: Sendable {
         let png = Data(referencing: encoded)
         let version = ProcessInfo.processInfo.operatingSystemVersionString
         var hash = SHA256()
-        hash.update(data: Data(("vision-accurate-correction-v3:" + version).utf8))
+        hash.update(data: Data(("vision-accurate-fast-fallback-v4:" + version).utf8))
         hash.update(data: try JSONEncoder().encode(languages))
         hash.update(data: png)
         let key = hash.finalize().map { String(format: "%02x", $0) }.joined()
@@ -76,11 +69,11 @@ struct OCRService: Sendable {
             // Both processes share the original per-image time budget.
             try Self.runHelper(executable: executable, input: input, output: output,
                 languagesJSON: languagesJSON, deadline: began + min(10, context.ocrTimeout / 2),
-                compatibility: preferCompatibility, context: context)
+                compatibility: false, context: context)
         } catch ExtractionError.ocrTimedOut {
             try Self.checkpoint(context)
             try Self.runHelper(executable: executable, input: input, output: output,
-                languagesJSON: languagesJSON, deadline: deadline, compatibility: !preferCompatibility, context: context)
+                languagesJSON: languagesJSON, deadline: deadline, compatibility: true, context: context)
         }
         try Self.checkpoint(context)
         do {

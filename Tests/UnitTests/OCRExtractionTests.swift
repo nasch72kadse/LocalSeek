@@ -73,7 +73,9 @@ final class OCRExtractionTests: XCTestCase {
         let doc = try await PDFExtractor().extract(fileURL: url, context: ExtractionContext())
         XCTAssertEqual(doc.segments.count, 1)
         XCTAssertEqual(doc.segments.first?.location, .page(1))
-        XCTAssertTrue(doc.segments.first?.text.contains("Pruefbericht") == true,
+        // Vision's fast fallback can split a compound word into two tokens.
+        // Require the same letters while allowing OCR whitespace variation.
+        XCTAssertTrue(doc.segments.first?.text.filter { !$0.isWhitespace }.contains("Pruefbericht") == true,
                       doc.segments.first?.text ?? "<leer>")
     }
 }
