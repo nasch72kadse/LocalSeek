@@ -122,10 +122,10 @@ def publish(plan):
     checksum.write_text(digest.hexdigest() + '  ' + dmg.name + '\n')
     with tempfile.TemporaryDirectory(prefix='release-', dir=build) as temporary:
         notes = Path(temporary) / 'notes.md'
-        notes.write_text(f"LocalSeek {plan['version']} für Apple Silicon, macOS 14 oder neuer.\n\n"
+        notes.write_text(f"LocalSeek {plan['version']} for Apple Silicon, macOS 14 or later.\n\n"
                          f"Commit: `{plan['commit']}`\n\n"
-                         'Developer ID signiert und von Apple notariert. '
-                         'DMG enthält Suchmodell, OCR-Helper und Laufzeitbibliotheken.\n')
+                         'Developer ID signed and notarized by Apple. '
+                         'The DMG includes the search model, OCR helper, and runtime libraries.\n')
         # Atomic tag creation fails if another publisher claimed the tag since
         # preflight. Never allow gh to reuse a tag pointing to another commit.
         run('gh', 'api', '--hostname', 'github.com', '--method', 'POST',
@@ -133,7 +133,8 @@ def publish(plan):
             '-f', 'sha=' + plan['commit'])
         args = ['gh', 'release', 'create', plan['tag'], str(dmg), str(checksum),
                 '--repo', 'github.com/' + plan['repository'], '--target', plan['commit'],
-                '--verify-tag', '--title', 'LocalSeek ' + plan['tag'], '--notes-file', str(notes)]
+                '--verify-tag', '--title', 'LocalSeek ' + plan['version'] +
+                (' (Development Preview)' if plan['branch'] == 'dev' else ''), '--notes-file', str(notes)]
         if plan['branch'] == 'dev':
             args += ['--prerelease', '--latest=false']
         else:
