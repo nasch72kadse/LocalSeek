@@ -9,6 +9,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let shortcut = GlobalShortcut()
     private var searchWindow: NSWindow?
     private var onboardingWindow: NSWindow?
+    private lazy var settingsWindow = SettingsWindowController(makeContent: { [index, loginItem, shortcut] in
+        NSHostingView(rootView: SettingsView().environmentObject(index)
+            .environmentObject(loginItem).environmentObject(shortcut))
+    })
     private var observers: [NSObjectProtocol] = []
     private var powerSource: CFRunLoopSource?
     private var terminating = false
@@ -45,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         NotificationCenter.default.post(name: .init("LocalSeekFocusSearch"), object: nil)
         trace("search-window-visible: \(searchWindow?.isVisible == true)")
     }
+    func showSettings() { settingsWindow.show() }
+
     func showOnboarding() {
         if onboardingWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 480), styleMask: [.titled, .closable], backing: .buffered, defer: false)

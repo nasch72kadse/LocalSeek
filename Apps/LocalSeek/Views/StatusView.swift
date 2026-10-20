@@ -6,6 +6,7 @@ struct StatusView: View {
     @EnvironmentObject var index: IndexService
     @EnvironmentObject var loginItem: LoginItemManager
     let showSearch: () -> Void
+    let showSettings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -62,7 +63,8 @@ struct StatusView: View {
 
             HStack {
                 Spacer()
-                SettingsLink { Text("Einstellungen…") }
+                Button("Einstellungen…", action: showSettings)
+                    .keyboardShortcut(",", modifiers: .command)
             }
 
             Button("Beenden") { NSApplication.shared.terminate(nil) }

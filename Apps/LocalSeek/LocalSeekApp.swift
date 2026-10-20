@@ -6,13 +6,15 @@ struct LocalSeekApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     var body: some Scene {
         MenuBarExtra("LocalSeek", systemImage: "magnifyingglass") {
-            StatusView(showSearch: delegate.showSearch)
+            StatusView(showSearch: delegate.showSearch, showSettings: delegate.showSettings)
                 .environmentObject(delegate.index)
                 .environmentObject(delegate.loginItem)
         }.menuBarExtraStyle(.window)
-        Settings {
-            SettingsView().environmentObject(delegate.index)
-                .environmentObject(delegate.loginItem).environmentObject(delegate.shortcut)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Einstellungen…", action: delegate.showSettings)
+                    .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }
