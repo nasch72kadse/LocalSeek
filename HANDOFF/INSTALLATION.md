@@ -1,6 +1,6 @@
 # LocalSeek installieren und übertragen
 
-Das fertige Paket enthält LocalSeek 1.1.0, den OCR-Hilfsprozess, das Suchmodell
+Das fertige Paket enthält LocalSeek 1.1.1, den OCR-Hilfsprozess, das Suchmodell
 `multilingual-e5-small-q8_0.gguf`, die nativen Bibliotheken und die Metal-Laufzeit.
 Zur Benutzung werden keine zusätzlichen Modelle, Python, Ollama, Homebrew,
 Xcode oder sonstigen Entwicklungswerkzeuge benötigt. Die Suche arbeitet lokal.

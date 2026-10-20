@@ -102,6 +102,10 @@ Eine SHA-256-Datei liegt neben `build/LocalSeek.dmg`. Die DMG wird erst nach Pr�
 veröffentlicht: Datenträger-Prüfsumme, Einhängen ohne Finder-Fenster, Signatur,
 Architektur, gebündelte Bibliotheken, Modell-SHA-256 und Programme-Verknüpfung.
 Sie enthält keine Nutzerquellen, Nutzerdatenbank oder Einstellungen des Build-Macs.
+Compilerpfade werden auf `/LocalSeek` abgebildet; lokale Debug-Dateiverweise werden
+vor dem Signieren entfernt. Eine zusätzliche Paketprüfung stoppt die Weitergabe,
+wenn App-Ressourcen oder Binärdateien noch absolute Benutzerpfade, private Schlüssel
+oder Suchindex-Dateien enthalten.
 Der Offline-Test sperrt Netzwerkzugriffe nur für seinen eigenen Kindprozess.
 Der zusätzliche Lasttest läuft mit dem App-Executable:
 

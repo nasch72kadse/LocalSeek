@@ -6,7 +6,8 @@ cd "$(dirname "$0")/.."
 git ls-files --cached --others --exclude-standard -- \
   Apps Shared LlamaBridge project.yml Package.resolved \
   Scripts/build-native.sh Scripts/build.sh Scripts/package.sh \
-  Scripts/source-checksums.sh Scripts/verify-bundle.sh Scripts/verify-artifact.sh Scripts/ci \
+  Scripts/source-checksums.sh Scripts/verify-bundle.sh Scripts/check-bundle-privacy.py Scripts/verify-artifact.sh Scripts/ci \
+  Tests/BuildTools/test_bundle_privacy.py \
   .github/workflows/build.yml \
   Models/manifest.json Models/native-dependencies.json Licenses \
   README.md THIRD_PARTY_NOTICES.md HANDOFF/INSTALLATION.md \

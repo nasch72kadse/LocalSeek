@@ -38,6 +38,11 @@ cp Licenses/* THIRD_PARTY_NOTICES.md Package.resolved Models/native-dependencies
 cp README.md "$APP/Contents/Resources/README.md"
 cp HANDOFF/INSTALLATION.md "$APP/Contents/Resources/INSTALLATION.md"
 if [[ -f build/source-checksums.txt ]]; then cp build/source-checksums.txt "$APP/Contents/Resources/source-checksums.txt"; fi
+# Object-file debug references can contain absolute paths even when compiler
+# file macros are mapped. Strip those references before the final signatures.
+for binary in "$APP/Contents/MacOS/LocalSeek" "$APP/Contents/Helpers/LocalSeekOCR" "$APP/Contents/Frameworks/SharedCore.framework/Versions/A/SharedCore"; do
+  xcrun strip -S "$binary"
+done
 SIGN_ARGS=(--force --sign "$SIGNING_ID")
 if [[ "$SIGNING_ID" == '-' ]]; then
   SIGN_ARGS+=(--options 0 --timestamp=none)
