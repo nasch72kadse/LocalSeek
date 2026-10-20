@@ -1,0 +1,5 @@
+(version 1)
+(allow default)
+; Block all IPv4/IPv6 networking, including loopback and IP socket binding.
+; Unix-domain IPC stays available to Apple's on-device Vision/Core ML services.
+(deny network* (local ip) (remote ip))

@@ -116,7 +116,7 @@ class LocalReleaseTests(unittest.TestCase):
             (build / 'source-checksums.txt').write_text('receipt\n')
             plan = dict(repository='owner/LocalSeek', commit=SHA, branch='dev', version='1.1.0',
                         tag='v1.1.0-dev.' + SHA[:12], team=TEAM)
-            for failure in ('notary', 'offline', None):
+            for failure in ('tests', 'notary', 'offline', None):
                 calls = []
                 def command(*args, **kwargs):
                     calls.append(args)
@@ -124,6 +124,8 @@ class LocalReleaseTests(unittest.TestCase):
                         return '1.1.0'
                     if args[:2] == ('bash', 'Scripts/source-checksums.sh'):
                         return 'receipt'
+                    if failure == 'tests' and args[:2] == ('bash', 'Scripts/test-release.sh'):
+                        raise RuntimeError('Unit/integration test gate failed')
                     if failure == 'offline' and args[:2] == ('bash', 'Scripts/verify-offline.sh'):
                         raise RuntimeError('Offline test failed')
                     return ''

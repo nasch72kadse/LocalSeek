@@ -7,6 +7,8 @@ git ls-files --cached --others --exclude-standard -- \
   Apps Shared LlamaBridge project.yml Package.resolved \
   Scripts/build-native.sh Scripts/build.sh Scripts/package.sh \
   Scripts/local-build-config.sh Scripts/publish-release.sh Scripts/publish-release.py \
+  Scripts/verify-offline.sh Scripts/offline.sb \
+  Scripts/test.sh Scripts/test-release.sh Scripts/release-tests.py Scripts/check-migration-sql.py Tests \
   Scripts/source-checksums.sh Scripts/verify-bundle.sh Scripts/verify-artifact.sh Scripts/ci \
   .github/workflows/build.yml \
   Models/manifest.json Models/native-dependencies.json Licenses \

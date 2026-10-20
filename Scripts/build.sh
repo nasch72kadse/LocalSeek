@@ -11,6 +11,13 @@ command -v xcodegen >/dev/null || { echo 'XcodeGen fehlt: brew install xcodegen'
 xcodegen generate
 mkdir -p LocalSeek.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
 cp Package.resolved LocalSeek.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+if [[ "${CONFIGURATION:-Release}" == Release ]]; then
+  # CI may already have run this gate earlier in the same job. Local builds
+  # always run fresh tests, before signing/notary uploads or creating a DMG.
+  if [[ "${GITHUB_ACTIONS:-}" != true ]] || ! bash Scripts/test-release.sh --verify; then
+    bash Scripts/test-release.sh
+  fi
+fi
 xcodebuild build -scheme LocalSeek -configuration "${CONFIGURATION:-Release}" \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
   -clonedSourcePackagesDirPath build/SourcePackages -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_IDENTITY=-

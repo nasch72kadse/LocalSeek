@@ -7,6 +7,8 @@ case "${1:-}" in
   --skip-build) ;;
   *) echo 'Aufruf: Scripts/package.sh [--skip-build]' >&2; exit 1 ;;
 esac
+# Required for every packaging entry point, before any Apple upload.
+bash Scripts/test-release.sh --verify
 # Refuse to package an older binary after code or dependency changes.
 [[ -f build/source-checksums.txt && -f build/last-built-configuration.txt ]] || { echo 'Bitte zuerst Scripts/build.sh ausführen.' >&2; exit 1; }
 [[ "$(cat build/last-built-configuration.txt)" == 'Release' ]] || { echo 'Paketbau benötigt einen Release-Build.' >&2; exit 1; }

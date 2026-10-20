@@ -9,8 +9,15 @@ import CryptoKit
 /// never retain the single indexing worker or prevent cancellation/shutdown.
 struct OCRService: Sendable {
     private let helperURL: URL?
+    private let preferCompatibility: Bool
 
-    init(helperURL: URL? = nil) { self.helperURL = helperURL }
+    init(helperURL: URL? = nil, preferCompatibility: Bool? = nil) {
+        self.helperURL = helperURL
+        // On macOS 27, starting revision 3 can also delay a subsequent retry in
+        // the system compiler. Avoid entering that path first on affected Macs.
+        self.preferCompatibility = preferCompatibility ??
+            (ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27)
+    }
 
     private static var bundledHelper: URL? {
         let framework = Bundle(for: OCRBundleToken.self).bundleURL
@@ -37,7 +44,7 @@ struct OCRService: Sendable {
         let png = Data(referencing: encoded)
         let version = ProcessInfo.processInfo.operatingSystemVersionString
         var hash = SHA256()
-        hash.update(data: Data(("vision-accurate-correction-v2:" + version).utf8))
+        hash.update(data: Data(("vision-accurate-correction-v3:" + version).utf8))
         hash.update(data: try JSONEncoder().encode(languages))
         hash.update(data: png)
         let key = hash.finalize().map { String(format: "%02x", $0) }.joined()
@@ -61,16 +68,46 @@ struct OCRService: Sendable {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
         try Self.checkpoint(context)
 
+        let began = ProcessInfo.processInfo.systemUptime
+        let deadline = began + context.ocrTimeout
+        let languagesJSON = String(decoding: try JSONEncoder().encode(languages), as: UTF8.self)
+        do {
+            // Reserve time for the alternate path if the first attempt stalls.
+            // Both processes share the original per-image time budget.
+            try Self.runHelper(executable: executable, input: input, output: output,
+                languagesJSON: languagesJSON, deadline: began + min(10, context.ocrTimeout / 2),
+                compatibility: preferCompatibility, context: context)
+        } catch ExtractionError.ocrTimedOut {
+            try Self.checkpoint(context)
+            try Self.runHelper(executable: executable, input: input, output: output,
+                languagesJSON: languagesJSON, deadline: deadline, compatibility: !preferCompatibility, context: context)
+        }
+        try Self.checkpoint(context)
+        do {
+            let data = try boundedData(fileURL: output, maxBytes: min(context.maxBytes, 4 * 1024 * 1024))
+            let lines = try JSONDecoder().decode([String].self, from: data)
+            try? context.ocrCache?.store(lines, key: key)
+            return lines
+        } catch is CancellationError { throw CancellationError() }
+        catch { throw ExtractionError.ocrFailed }
+    }
+
+    private static func runHelper(executable: URL, input: URL, output: URL,
+                                  languagesJSON: String, deadline: TimeInterval,
+                                  compatibility: Bool, context: ExtractionContext) throws {
+        try checkpoint(context)
+        let remaining = deadline - ProcessInfo.processInfo.systemUptime
+        guard remaining > 0 else { throw ExtractionError.ocrTimedOut }
+        // Never accept output left behind by a process that subsequently hung.
+        if FileManager.default.fileExists(atPath: output.path) { try FileManager.default.removeItem(at: output) }
         let process = Process()
         process.executableURL = executable
-        process.arguments = [input.path, output.path,
-            String(decoding: try JSONEncoder().encode(languages), as: UTF8.self),
-            String(context.ocrTimeout), String(getpid())]
+        process.arguments = [input.path, output.path, languagesJSON, String(remaining),
+            String(getpid()), compatibility ? "compatibility" : "automatic"]
         // No pipes: a full log pipe must not introduce another blocking wait.
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        let deadline = ProcessInfo.processInfo.systemUptime + context.ocrTimeout
         do { try process.run() } catch { throw ExtractionError.ocrUnavailable }
         defer { Self.killIfRunning(process) }
         while process.isRunning {
@@ -92,13 +129,6 @@ struct OCRService: Sendable {
             FileHandle.standardError.write(Data(("LocalSeek OCR helper failed: " + detail + "\n").utf8))
             throw ExtractionError.ocrFailed
         }
-        do {
-            let data = try boundedData(fileURL: output, maxBytes: min(context.maxBytes, 4 * 1024 * 1024))
-            let lines = try JSONDecoder().decode([String].self, from: data)
-            try? context.ocrCache?.store(lines, key: key)
-            return lines
-        } catch is CancellationError { throw CancellationError() }
-        catch { throw ExtractionError.ocrFailed }
     }
 
     private static func checkpoint(_ context: ExtractionContext) throws {

@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import CoreText
 import ImageIO
 import UniformTypeIdentifiers
 import GRDB
@@ -15,7 +16,7 @@ final class OCRProcessTests: XCTestCase {
         var image: URL { root.appendingPathComponent("image.png") }
     }
 
-    private func fixture(script: String) throws -> Fixture {
+    private func fixture(script: String, text: String? = nil) throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ocr-process-test-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let fixture = Fixture(root: root)
@@ -28,6 +29,14 @@ final class OCRProcessTests: XCTestCase {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         bitmap.setFillColor(CGColor(gray: 1, alpha: 1))
         bitmap.fill(CGRect(x: 0, y: 0, width: 519, height: 196))
+        if let text {
+            bitmap.textPosition = CGPoint(x: 12, y: 70)
+            let line = NSAttributedString(string: text, attributes: [
+                NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 40, nil),
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
+            ])
+            CTLineDraw(CTLineCreateWithAttributedString(line), bitmap)
+        }
         let destination = CGImageDestinationCreateWithURL(fixture.image as CFURL,
             UTType.png.identifier as CFString, 1, nil)!
         CGImageDestinationAddImage(destination, bitmap.makeImage()!, nil)
@@ -83,6 +92,103 @@ final class OCRProcessTests: XCTestCase {
         try assertStoppedAndCleaned(fixture)
     }
 
+    func testAcceleratorStallRetriesCompatibilityWithinOriginalBudget() throws {
+        let fixture = try fixture(script: """
+            if [ "$6" = compatibility ]; then
+              printf '%s' '["CPU fallback"]' > "$2"
+            else
+              printf '%s' "$$" > "$(dirname "$0")/first.pid"
+              printf '%s' '["Stale output"]' > "$2"
+              trap '' TERM
+              exec /bin/sleep 60
+            fi
+            """)
+        let began = ProcessInfo.processInfo.systemUptime
+        let result = try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+            .extract(fileURL: fixture.image, context: .init(ocrTimeout: 0.8))
+        XCTAssertEqual(result.segments.first?.text, "CPU fallback")
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - began, 1.3)
+        let firstPID = try XCTUnwrap(pid_t(String(contentsOf: fixture.root.appendingPathComponent("first.pid"),
+                                                 encoding: .utf8)))
+        XCTAssertEqual(kill(firstPID, 0), -1, "Kill the stalled accelerator before retrying")
+        XCTAssertEqual(errno, ESRCH)
+        try assertStoppedAndCleaned(fixture)
+    }
+
+    func testCompatibilityPreferenceAvoidsStartingTheProblematicAccelerator() throws {
+        let fixture = try fixture(script: """
+            if [ "$6" = compatibility ]; then
+              printf '%s' '["Local CPU OCR"]' > "$2"
+            else
+              touch "$(dirname "$0")/accelerator.started"
+              exec /bin/sleep 60
+            fi
+            """)
+        let result = try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: true))
+            .extract(fileURL: fixture.image, context: .init(ocrTimeout: 0.8))
+        XCTAssertEqual(result.segments.first?.text, "Local CPU OCR")
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            fixture.root.appendingPathComponent("accelerator.started").path))
+        try assertStoppedAndCleaned(fixture)
+    }
+
+    func testCancellationAlsoKillsCompatibilityRetry() async throws {
+        let fixture = try fixture(script: """
+            if [ "$6" = compatibility ]; then
+              touch "$(dirname "$0")/retry.started"
+            fi
+            trap '' TERM
+            exec /bin/sleep 60
+            """)
+        let worker = Task.detached {
+            try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+                .extract(fileURL: fixture.image, context: .init(ocrTimeout: 2))
+        }
+        let marker = fixture.root.appendingPathComponent("retry.started")
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while !FileManager.default.fileExists(atPath: marker.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        let began = ProcessInfo.processInfo.systemUptime
+        worker.cancel()
+        do { _ = try await worker.value; XCTFail("Expected cancellation") }
+        catch is CancellationError {}
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - began, 0.8)
+        try assertStoppedAndCleaned(fixture)
+    }
+
+    func testBothHungAttemptsShareTheTotalTimeoutBudget() throws {
+        let fixture = try fixture(script: """
+            printf '%s\\n' "$6" >> "$(dirname "$0")/attempts"
+            trap '' TERM
+            exec /bin/sleep 60
+            """)
+        let began = ProcessInfo.processInfo.systemUptime
+        XCTAssertThrowsError(try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+            .extract(fileURL: fixture.image, context: .init(ocrTimeout: 1))) {
+                XCTAssertEqual($0 as? ExtractionError, .ocrTimedOut)
+            }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - began, 1.4)
+        XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("attempts"), encoding: .utf8),
+                       "automatic\ncompatibility\n")
+        try assertStoppedAndCleaned(fixture)
+    }
+
+    func testTimedOutOutputCannotMasqueradeAsSuccessfulCompatibilityOCR() throws {
+        let fixture = try fixture(script: """
+            if [ "$6" = compatibility ]; then exit 0; fi
+            printf '%s' '["Stale output"]' > "$2"
+            trap '' TERM
+            exec /bin/sleep 60
+            """)
+        XCTAssertThrowsError(try ImageOCRExtractor(ocr: OCRService(helperURL: fixture.helper, preferCompatibility: false))
+            .extract(fileURL: fixture.image, context: .init(ocrTimeout: 0.8))) {
+                XCTAssertEqual($0 as? ExtractionError, .ocrFailed)
+            }
+        try assertStoppedAndCleaned(fixture)
+    }
+
     func testCrashAndInvalidResponseAreFailuresRatherThanEmptySuccess() throws {
         for script in ["exit 1", "printf '%s' 'invalid JSON' > \"$2\""] {
             let fixture = try fixture(script: script)
@@ -100,6 +206,31 @@ final class OCRProcessTests: XCTestCase {
             .extract(fileURL: fixture.image, context: .init())) {
                 XCTAssertEqual($0 as? ExtractionError, .ocrUnavailable)
             }
+    }
+
+    func testRealOCRWorksWithAllIPNetworkingBlocked() throws {
+        try assertRealOfflineOCR(compatibility: false)
+    }
+
+    func testRealCompatibilityOCRWorksWithAllIPNetworkingBlocked() throws {
+        try assertRealOfflineOCR(compatibility: true)
+    }
+
+    private func assertRealOfflineOCR(compatibility: Bool) throws {
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let profile = repository.appendingPathComponent("Scripts/offline.sb")
+        let helper = Bundle(for: Self.self).bundleURL.appendingPathComponent("Contents/Helpers/LocalSeekOCR")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helper.path))
+        func quoted(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let arguments = compatibility ? "\"$1\" \"$2\" \"$3\" \"$4\" \"$5\" compatibility" : "\"$@\""
+        let raster = try fixture(script: "exec /usr/bin/sandbox-exec -f " + quoted(profile.path) +
+                                 " " + quoted(helper.path) + " " + arguments, text: "LocalSeek Offline OCR")
+        let document = try ImageOCRExtractor(ocr: OCRService(helperURL: raster.helper))
+            .extract(fileURL: raster.image, context: .init(ocrTimeout: 30))
+        XCTAssertTrue(document.segments.contains { $0.text.contains("LocalSeek") },
+                      "Vision must recognize text without IP networking, using only local IPC")
+        try assertStoppedAndCleaned(raster)
     }
 
     func testRepeatedRasterUsesCacheAndLanguageChangeInvalidatesIt() throws {

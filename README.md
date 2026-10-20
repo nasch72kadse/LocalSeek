@@ -165,8 +165,14 @@ werden; es gibt keine Garantie, jeden theoretisch besten Treffer zu finden.
 
 Ein Hintergrundjob läuft jeweils aktiv. Inferenz nutzt bis zu zwei CPU-Threads plus
 Metal; OCR läuft allein und mit niedriger Priorität.
-OCR wird in einem mitgelieferten Hilfsprozess ausgeführt. Nach 30 Sekunden je Bild
-oder gescannter PDF-Seite wird ein hängender Prozess beendet. Abbruch und Pause
+OCR wird in einem mitgelieferten Hilfsprozess ausgeführt. Für macOS 27 wird wegen
+beobachteter Stalls bei der Neural-Engine-Kompilierung zunächst die ältere
+Vision-Revision mit CPU-Zuweisung verwendet; auf älteren Systemen der normale
+Vision-Pfad. Hängt der erste Versuch, wird er nach höchstens 10 Sekunden beendet
+und in einem neuen Prozess mit dem anderen Pfad wiederholt. Beide Versuche teilen
+sich insgesamt 30 Sekunden je Bild oder gescannter PDF-Seite. Die ältere Revision
+hat einen anderen Erkennungsumfang, etwa bei Handschrift und unterstützten Sprachen.
+Abbruch und Pause
 beenden ihn ebenfalls. Die Datei erhält einen Fehler mit begrenzten Wiederholungen;
 vorhandene Inhalte bleiben erhalten und die Queue arbeitet mit der nächsten Datei weiter.
 Der Hilfsprozess benötigt keine separate Installation.

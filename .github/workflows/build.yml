@@ -80,8 +80,7 @@ jobs:
       - name: Run unit and integration tests
         timeout-minutes: 12
         run: |
-          python3 Scripts/check-migration-sql.py | tee build/reports/migration.json
-          Scripts/test.sh 2>&1 | tee build/reports/tests.log
+          bash Scripts/test-release.sh
 
       - name: Prepare Apple signing on main
         if: github.ref == 'refs/heads/main'
@@ -148,6 +147,9 @@ jobs:
           path: |
             build/reports/environment.txt
             build/reports/tests.log
+            build/reports/tools-tests.log
+            build/reports/test-summary.json
+            build/reports/release-tests.json
             build/reports/migration.json
             build/reports/offline.json
           if-no-files-found: ignore

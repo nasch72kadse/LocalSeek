@@ -92,6 +92,8 @@ def verify_signing(path, team, runtime=False):
 
 
 def publish(plan):
+    # Also enforce the gate for direct/manual publishing of an existing package.
+    run('bash', 'Scripts/test-release.sh', '--verify')
     build = ROOT / 'build'
     app = Path((build / 'latest-package.txt').read_text().strip()).resolve()
     dmg = Path((build / 'latest-artifact.txt').read_text().strip()).resolve()

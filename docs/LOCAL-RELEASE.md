@@ -34,7 +34,9 @@ die derzeitigen Branch-Push-Trigger werden dadurch nicht ausgelöst.
    anpassen, vorzugsweise den vollständigen SHA-1-Identifikator aus Schritt 1.
    Diese lokale Shell-Konfiguration ist von Git ausgeschlossen. Auf dem bereits
    eingerichteten Arbeits-Mac ist sie mit der gefundenen Signieridentität
-   vorbereitet; Veröffentlichung bleibt bis zur Einrichtung des Profils aus.
+   vorbereitet. `LOCALSEEK_TEST_SIGN_IDENTITY` kann zusätzlich ein
+   Apple-Development-Zertifikat für die lokalen XCTest-Bundles angeben. Eine
+   macOS-Sicherheitsfreigabe für Entwicklerwerkzeuge muss lokal erfolgen.
 
 ## Bauen und hochladen
 
@@ -63,6 +65,22 @@ Notarisierungszugang und die GitHub-Anmeldung vor dem eigentlichen Build erneut.
 Ein fehlender Zugang beendet den Vorgang früh; es gibt keinen Rückfall auf eine
 ad-hoc-Signatur beim Veröffentlichen.
 
+Jeder lokale Release-Build führt zunächst die vollständigen Unit- und
+Integrationstests aus: einschließlich echtem OCR-Helper bei gesperrtem IP-Verkehr,
+Embedding-Tests mit dem gepinnten Modell, OCR-Timeout/Abbruch und Fortsetzung der
+Indexer-Queue. Auch ein blockierter Beschleuniger, der CPU-Kompatibilitätspfad,
+sein Abbruch und das gemeinsame Zeitbudget werden geprüft. Hinzu kommen
+Datenbankmigrationen und die Build-/Netzwerktests.
+Fehler, übersprungene oder fehlende Tests stoppen den Build vor jeder
+Apple-Einreichung. Testprozesse und einzelne Tests haben feste Zeitlimits.
+
+Die Freigabe unter `build/reports/release-tests.json` gilt höchstens 24 Stunden,
+ist an Commit, Quellen einschließlich Tests, macOS und Xcode gebunden und wird
+bei jedem erneuten Testlauf zunächst entfernt. Auch direkte Aufrufe von
+`package.sh --skip-build` und `publish-release.sh --publish` verlangen diese
+Freigabe. Ein gezielter Vorabtest ist mit `bash Scripts/test-release.sh` möglich,
+nachdem die Debug-Build-Voraussetzungen gebaut wurden.
+
 Nach dem Build prüft es Quellstand, App-Version, Developer-ID-Team, sichere
 Zeitstempel, Hardened Runtime, App-/DMG-Signaturen und beide angehefteten
 Notarisierungstickets. Es führt Gatekeeper-Prüfung, vollständige DMG-Prüfung und
@@ -70,6 +88,13 @@ den Offline-Selbsttest mit dem gebündelten Modell und OCR-Helper aus. Erst dana
 wird auf GitHub ein Tag für genau den gebauten Commit angelegt und das Release
 mit DMG und portabler SHA-256-Datei veröffentlicht. GitHub CLI lädt zunächst die
 Assets hoch und veröffentlicht anschließend das Release.
+
+Der Offline-Test sperrt IPv4/IPv6 für App und Kindprozesse, einschließlich
+Loopback, TCP/UDP und IP-Socket-Bindung. Lokale Unix-Sockets bleiben verfügbar:
+Apple Vision/Core ML benötigt diese Kommunikation für die Modellinitialisierung.
+Eine pauschale Sperre aller Socket-Arten kann deshalb auf neueren macOS-Versionen
+OCR-Zeitüberschreitungen verursachen. Der Regressionstest prüft die IP-Sperre
+gegen echte lokale Listener und die weiterhin erlaubte Unix-Kommunikation.
 
 ## Versionen und Wiederholungen
 
