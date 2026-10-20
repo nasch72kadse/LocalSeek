@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DMG="${1:?Aufruf: bash Scripts/verify-artifact.sh /Pfad/LocalSeek.dmg}"
+DMG="${1:?Usage: bash Scripts/verify-artifact.sh /path/to/LocalSeek.dmg}"
 hdiutil verify -quiet "$DMG"
 MOUNT="$(mktemp -d "$PWD/build/verify-dmg.XXXXXX")"
 MOUNTED=0
@@ -12,7 +12,7 @@ cleanup() {
 trap cleanup EXIT
 hdiutil attach -quiet -readonly -nobrowse -mountpoint "$MOUNT" "$DMG"
 MOUNTED=1
-[[ "$(readlink "$MOUNT/Programme")" == '/Applications' ]]
-[[ -f "$MOUNT/Installieren.txt" ]]
+[[ "$(readlink "$MOUNT/Applications")" == '/Applications' ]]
+[[ -f "$MOUNT/Install.txt" ]]
 Scripts/verify-bundle.sh "$MOUNT/LocalSeek.app"
-printf 'DMG geprüft: App, Modell, Helper, Bibliotheken und Programme-Verknüpfung enthalten.\n'
+printf 'DMG verified: app, model, OCR helper, libraries, and Applications shortcut included.\n'

@@ -1,3 +1,0 @@
-	 Executed 100 tests, with 0 failures (0 unexpected) in 3.908 (3.930) seconds
-	 Executed 100 tests, with 0 failures (0 unexpected) in 3.908 (3.931) seconds
-** TEST SUCCEEDED **

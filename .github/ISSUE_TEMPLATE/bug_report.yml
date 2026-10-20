@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible LocalSeek problem.
+body:
+  - type: markdown
+    attributes:
+      value: Use synthetic examples. Remove personal paths, document text, and credentials from attachments. Report security vulnerabilities privately.
+  - type: input
+    id: version
+    attributes:
+      label: App version or source commit
+      placeholder: For example, 1.1.2 or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: macOS version and Apple Silicon model
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal synthetic example where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Additional context
+      description: Optional redacted logs or screenshots. Never attach your real index database or private documents.

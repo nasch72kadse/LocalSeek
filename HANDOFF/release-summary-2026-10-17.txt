@@ -1,3 +1,0 @@
-Release build succeeded.
-Package codesign, arm64 and minOS 14.0 verification succeeded.
-CLI benchmark: exit 0, network denied, passed true.

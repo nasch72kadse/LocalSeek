@@ -10,7 +10,7 @@ git ls-files --cached --others --exclude-standard -- \
   Tests/BuildTools/test_bundle_privacy.py \
   .github/workflows/build.yml \
   Models/manifest.json Models/native-dependencies.json Licenses \
-  README.md THIRD_PARTY_NOTICES.md HANDOFF/INSTALLATION.md \
+  README.md THIRD_PARTY_NOTICES.md docs/INSTALLATION.md \
   | LC_ALL=C sort | while IFS= read -r source; do
     shasum -a 256 "$source"
 done
