@@ -5,12 +5,18 @@ import OSLog
 struct LocalSeekApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     var body: some Scene {
-        MenuBarExtra("LocalSeek", systemImage: "magnifyingglass") {
+        MenuBarExtra {
             StatusView(showSearch: delegate.showSearch, showSettings: delegate.showSettings)
                 .environmentObject(delegate.index)
                 .environmentObject(delegate.loginItem)
+                .environmentObject(delegate.updates)
+        } label: {
+            UpdateMenuBarLabel(updates: delegate.updates)
         }.menuBarExtraStyle(.window)
         .commands {
+            CommandGroup(after: .appInfo) {
+                UpdateCheckButton(updates: delegate.updates)
+            }
             CommandGroup(replacing: .appSettings) {
                 Button("Einstellungen…", action: delegate.showSettings)
                     .keyboardShortcut(",", modifiers: .command)

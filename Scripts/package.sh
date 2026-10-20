@@ -52,6 +52,13 @@ if [[ "$SIGNING_ID" == '-' ]]; then
 else
   SIGN_ARGS+=(--options runtime --timestamp)
 fi
+# Sparkle's nested code must be signed inside-out; signing the framework on
+# copy does not re-sign these helpers. Preserve Downloader's own entitlements.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+for helper in XPCServices/Installer.xpc Autoupdate Updater.app; do
+  codesign "${SIGN_ARGS[@]}" "$SPARKLE/$helper"
+done
+codesign "${SIGN_ARGS[@]}" --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
 for framework in "$APP"/Contents/Frameworks/*.framework; do
   [[ ! -d "$framework" ]] || codesign "${SIGN_ARGS[@]}" "$framework"
 done

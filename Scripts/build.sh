@@ -18,9 +18,11 @@ if [[ "${CONFIGURATION:-Release}" == Release ]]; then
     bash Scripts/test-release.sh
   fi
 fi
+UPDATE_CHANNEL=stable
+if [[ "$(git branch --show-current)" == dev ]]; then UPDATE_CHANNEL=dev; fi
 xcodebuild build -scheme LocalSeek -configuration "${CONFIGURATION:-Release}" \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/DerivedData \
-  -clonedSourcePackagesDirPath build/SourcePackages -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_IDENTITY=-
+  -clonedSourcePackagesDirPath build/SourcePackages -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_IDENTITY=- "LOCALSEEK_UPDATE_CHANNEL=$UPDATE_CHANNEL"
 
 # Source provenance, including untracked project files; no document/source-folder data.
 bash Scripts/source-checksums.sh > build/source-checksums.txt.pending

@@ -82,8 +82,9 @@ IPC does not require an internet connection.
 - `main` publishes regular tags such as `v1.1.1` after the intended version and release
   tooling have been promoted to that branch.
 - Existing releases/tags are never overwritten. Increment `MARKETING_VERSION` and,
-  as needed, `CURRENT_PROJECT_VERSION` in `project.yml` for a new regular release.
-  A development release requires a new committed source state.
+  for every published build, `CURRENT_PROJECT_VERSION` in `project.yml` for a new regular release.
+  A development release requires a new committed source state. Build numbers must
+  exceed all published stable and preview builds.
 - `LOCALSEEK_RELEASE_TAG` may specify a custom tag starting with `v` and a digit,
   followed by letters, digits, dots, underscores, or hyphens.
 - A network failure after tag creation can leave a tag or draft. Inspect GitHub before
@@ -94,3 +95,9 @@ a private repository public.
 
 References: [GitHub CLI](https://cli.github.com/manual/gh_release_create),
 [Apple notarization](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+
+## In-app update publication
+
+The same local command signs and publishes the Sparkle feed after verifying the
+GitHub Release assets. See [update keys, channels, and recovery](UPDATES.md).
+The configured release Mac already holds its update key in the login Keychain.

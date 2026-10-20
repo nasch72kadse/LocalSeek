@@ -4,6 +4,7 @@ APP="$1"
 # Inspect actual resources and binaries, before a package can reach Apple/GitHub.
 python3 "$(dirname "$0")/check-bundle-privacy.py" "$APP"
 codesign --verify --deep --strict "$APP"
+python3 "$(dirname "$0")/verify-updater.py" "$APP"
 for binary in "$APP/Contents/MacOS/LocalSeek" "$APP/Contents/Helpers/LocalSeekOCR" "$APP/Contents/Frameworks/SharedCore.framework/Versions/A/SharedCore"; do
   [[ -f "$binary" ]] || { echo "Binärdatei fehlt: $binary" >&2; exit 1; }
   DEPENDENCIES="$(otool -L "$binary")"

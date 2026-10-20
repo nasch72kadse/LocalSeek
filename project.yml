@@ -12,6 +12,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
     exactVersion: "0.9.20"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: "2.10.0"
 
 settings:
   base:
@@ -22,8 +25,8 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     GENERATE_INFOPLIST_FILE: YES
     ARCHS: arm64
-    CURRENT_PROJECT_VERSION: 5
-    MARKETING_VERSION: "1.1.2"
+    CURRENT_PROJECT_VERSION: 6
+    MARKETING_VERSION: "1.2.0"
     OTHER_CFLAGS: ["$(inherited)", "-ffile-prefix-map=$(SRCROOT)=/LocalSeek"]
     OTHER_CPLUSPLUSFLAGS: ["$(inherited)", "-ffile-prefix-map=$(SRCROOT)=/LocalSeek"]
     OTHER_SWIFT_FLAGS: ["$(inherited)", "-debug-prefix-map", "$(SRCROOT)=/LocalSeek", "-file-prefix-map", "$(SRCROOT)=/LocalSeek"]
@@ -86,6 +89,8 @@ targets:
     sources:
       - Apps/LocalSeek
     dependencies:
+      - package: Sparkle
+        product: Sparkle
       - target: SharedCore
         embed: true
       - target: LlamaBridge
@@ -101,6 +106,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.localseek.app
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_FILE: Apps/LocalSeek/Info.plist
+        LOCALSEEK_UPDATE_CHANNEL: stable
         INFOPLIST_KEY_NSHumanReadableCopyright: "LocalSeek"
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/LlamaBridge/include
         LIBRARY_SEARCH_PATHS:
@@ -129,7 +136,11 @@ targets:
       - Apps/LocalSeek/LlamaEmbeddingProvider.swift
       - Apps/LocalSeek/ModelLocator.swift
       - Apps/LocalSeek/SettingsWindowController.swift
+      - Apps/LocalSeek/UpdateController.swift
+      - Apps/LocalSeek/SparkleUpdateEngine.swift
     dependencies:
+      - package: Sparkle
+        product: Sparkle
       - target: SharedCore
       - target: LlamaBridge
       - target: LocalSeekOCR

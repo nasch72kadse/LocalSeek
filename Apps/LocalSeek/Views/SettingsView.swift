@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject var index: IndexService
     @EnvironmentObject var loginItem: LoginItemManager
     @EnvironmentObject var shortcut: GlobalShortcut
+    @EnvironmentObject var updates: UpdateController
     @State private var confirmRebuild = false
     var body: some View {
         TabView {
@@ -61,6 +62,16 @@ struct SettingsView: View {
                     Button("Index neu aufbauen…") { confirmRebuild = true }
                 }
             }.formStyle(.grouped).tabItem { Label("Modell und Diagnose", systemImage: "wrench.and.screwdriver") }
+            Form {
+                Section("Software-Updates") {
+                    Text("LocalSeek \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                    Toggle("Automatisch nach Updates suchen", isOn: Binding(get: { updates.automaticChecks }, set: { updates.setAutomaticChecks($0) }))
+                    Toggle("Entwicklungsversionen einschließen", isOn: Binding(get: { updates.includesPreviews }, set: { updates.setIncludesPreviews($0) }))
+                    UpdateCheckButton(updates: updates)
+                    if let date = updates.lastCheck { Text("Letzte Prüfung: \(date.formatted(date: .abbreviated, time: .shortened))").foregroundStyle(.secondary) }
+                    Text("Die Prüfung erfolgt etwa einmal täglich über GitHub. Neue Versionen werden in der App angeboten und können nach Bestätigung installiert werden. Suchbegriffe, Dateipfade und Dokumentinhalte werden dabei nicht übertragen.").font(.caption).foregroundStyle(.secondary)
+                }
+            }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }
         }.frame(width: 670, height: 470)
         .alert("Index neu aufbauen?", isPresented: $confirmRebuild) {
             Button("Abbrechen", role: .cancel) { }

@@ -2,6 +2,7 @@
 """Publish a locally signed and notarized DMG; never overwrite a tag or release."""
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -10,6 +11,8 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts"))
+import update_feed as updates
 
 
 def run(*args, visible=False):
@@ -20,7 +23,7 @@ def run(*args, visible=False):
     return '' if visible else result.stdout.strip()
 
 
-def preflight():
+def preflight(resume=False):
     if os.environ.get('GITHUB_ACTIONS') == 'true':
         raise RuntimeError('Dieser Release-Weg ist für den lokalen Mac vorgesehen.')
     identity = os.environ.get('LOCALSEEK_SIGN_IDENTITY', '')
@@ -62,6 +65,10 @@ def preflight():
     if len(version_match) != 1:
         raise RuntimeError('Eindeutige MARKETING_VERSION im Format X.Y.Z erforderlich.')
     version = version_match[0]
+    numbers = re.findall(r'^\s+CURRENT_PROJECT_VERSION:\s*([1-9][0-9]*)\s*$', (ROOT / 'project.yml').read_text(), re.M)
+    if len(numbers) != 1:
+        raise RuntimeError('CURRENT_PROJECT_VERSION must be a unique positive integer.')
+    build_number = int(numbers[0])
     tag = os.environ.get('LOCALSEEK_RELEASE_TAG') or (
         f'v{version}' if branch == 'main' else f'v{version}-dev.{commit[:12]}')
     if not re.fullmatch(r'v[0-9][A-Za-z0-9._-]*', tag):
@@ -70,10 +77,19 @@ def preflight():
     run('git', 'check-ref-format', 'refs/tags/' + tag)
     refs = run('gh', 'api', '--hostname', 'github.com', '--paginate',
                f'repos/{repository}/git/matching-refs/tags/{tag}', '--jq', '.[].ref')
-    if 'refs/tags/' + tag in refs.splitlines():
+    exists = 'refs/tags/' + tag in refs.splitlines()
+    if resume:
+        if not exists:
+            raise RuntimeError('Cannot resume: release tag does not exist.')
+        ref = json.loads(run('gh', 'api', '--hostname', 'github.com', f'repos/{repository}/git/ref/tags/{tag}'))
+        if ref['object']['type'] != 'commit' or ref['object']['sha'] != commit:
+            raise RuntimeError('Cannot resume: tag does not point to the current source commit.')
+    elif exists:
         raise RuntimeError(f'Tag {tag} existiert bereits. Version oder LOCALSEEK_RELEASE_TAG erhöhen; '
                            'bestehende Releases werden nicht überschrieben.')
-    return dict(repository=repository, commit=commit, branch=branch, version=version, tag=tag, team=team)
+    feed = updates.preflight(ROOT, run, repository, build_number)
+    return dict(repository=repository, commit=commit, branch=branch, version=version, tag=tag,
+                team=team, build_number=build_number, feed=feed, resume=resume)
 
 
 def verify_signing(path, team, runtime=False):
@@ -121,26 +137,40 @@ def publish(plan):
             digest.update(block)
     checksum.write_text(digest.hexdigest() + '  ' + dmg.name + '\n')
     with tempfile.TemporaryDirectory(prefix='release-', dir=build) as temporary:
+        feed = updates.prepare(ROOT, run, plan, dmg, Path(temporary) / 'appcast.xml')
         notes = Path(temporary) / 'notes.md'
         notes.write_text(f"LocalSeek {plan['version']} for Apple Silicon, macOS 14 or later.\n\n"
                          f"Commit: `{plan['commit']}`\n\n"
                          'Developer ID signed and notarized by Apple. '
-                         'The DMG includes the search model, OCR helper, and runtime libraries.\n')
-        # Atomic tag creation fails if another publisher claimed the tag since
-        # preflight. Never allow gh to reuse a tag pointing to another commit.
-        run('gh', 'api', '--hostname', 'github.com', '--method', 'POST',
-            f"repos/{plan['repository']}/git/refs", '-f', 'ref=refs/tags/' + plan['tag'],
-            '-f', 'sha=' + plan['commit'])
-        args = ['gh', 'release', 'create', plan['tag'], str(dmg), str(checksum),
-                '--repo', 'github.com/' + plan['repository'], '--target', plan['commit'],
-                '--verify-tag', '--title', 'LocalSeek ' + plan['version'] +
-                (' (Development Preview)' if plan['branch'] == 'dev' else ''), '--notes-file', str(notes)]
-        if plan['branch'] == 'dev':
-            args += ['--prerelease', '--latest=false']
-        else:
-            args += ['--latest']
-        # gh stages the release, uploads every asset, then publishes. No --clobber.
-        run(*args, visible=True)
+                         'The DMG includes the search model, OCR helper, and runtime libraries.\n\n'
+                         'Automatic update checks and in-app installation are included. Install this '
+                         'DMG once to enable future updates; older builds cannot update themselves.\n')
+        if not plan.get("resume"):
+            # Atomic tag creation fails if another publisher claimed the tag since
+            # preflight. Never allow gh to reuse a tag pointing to another commit.
+            run('gh', 'api', '--hostname', 'github.com', '--method', 'POST',
+                f"repos/{plan['repository']}/git/refs", '-f', 'ref=refs/tags/' + plan['tag'],
+                '-f', 'sha=' + plan['commit'])
+            args = ['gh', 'release', 'create', plan['tag'], str(dmg), str(checksum),
+                    '--repo', 'github.com/' + plan['repository'], '--target', plan['commit'],
+                    '--verify-tag', '--title', 'LocalSeek ' + plan['version'] +
+                    (' (Development Preview)' if plan['branch'] == 'dev' else ''), '--notes-file', str(notes)]
+            if plan['branch'] == 'dev':
+                args += ['--prerelease', '--latest=false']
+            else:
+                args += ['--latest']
+            # gh stages the release, uploads every asset, then publishes. No --clobber.
+            run(*args, visible=True)
+        # Confirm the public release is complete before making it discoverable.
+        published = json.loads(run('gh', 'api', '--hostname', 'github.com',
+            f"repos/{plan['repository']}/releases/tags/{plan['tag']}"))
+        assets = {asset['name']: asset for asset in published['assets']}
+        if (published['draft'] or published['prerelease'] != (plan['branch'] == 'dev') or
+                dmg.name not in assets or checksum.name not in assets or
+                assets[dmg.name]['size'] != dmg.stat().st_size or
+                assets[dmg.name].get('digest') != 'sha256:' + digest.hexdigest()):
+            raise RuntimeError('Published release assets are incomplete; update feed was not changed.')
+        updates.publish(run, plan, feed)
     print(f"Signiertes Release: https://github.com/{plan['repository']}/releases/tag/{plan['tag']}")
 
 
@@ -149,14 +179,17 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check', action='store_true', help='Voraussetzungen ohne Upload prüfen')
     mode.add_argument('--publish', action='store_true', help='Aktuelles signiertes Paket veröffentlichen')
+    parser.add_argument('--resume', action='store_true', help='Verify an already published release and retry only its feed publication')
     args = parser.parse_args()
+    if args.resume and not args.publish:
+        parser.error('--resume requires --publish')
     try:
-        plan = preflight()
+        plan = preflight(resume=args.resume)
         if args.publish:
             publish(plan)
         else:
             print(f"Lokaler Release vorbereitet: {plan['repository']} {plan['tag']} ({plan['commit'][:12]})")
-    except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
+    except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f'LocalSeek Release abgebrochen: {error}', file=sys.stderr)
         return 1
     return 0

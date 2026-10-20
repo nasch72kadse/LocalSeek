@@ -40,6 +40,9 @@ or a separate search server.
 - **Install once.** The DMG includes the model, OCR helper, native libraries, and Metal
   components. End users do not need Homebrew, Python, Ollama, or developer tools.
 
+- **Update in the app.** Automatically check for signed releases and install them
+  through the app. Stable and development preview channels are separate.
+
 ## Get started
 
 1. Open [Releases](https://github.com/nasch72kadse/LocalSeek/releases) and download the
@@ -92,6 +95,8 @@ and format-specific limitations.
 LocalSeek does not send document contents or search queries to a cloud search service.
 The downloaded app uses its bundled model; it does not download one during normal use.
 The first source build does need internet access for pinned dependencies and the model.
+Automatic software-update checks contact GitHub; they can be disabled in Settings.
+See [in-app updates](docs/UPDATES.md) for privacy, channels, and signing details.
 
 The local index contains extracted document text. It lives in
 `~/Library/Application Support/LocalSeek/` and should be protected like the original files.

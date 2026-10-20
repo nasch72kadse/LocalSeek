@@ -59,3 +59,10 @@ extracted document text and should be protected like the original documents.
 
 See [architecture](ARCHITECTURE.md) for indexing behavior and limits, or
 [building](BUILDING.md) to create your own app package.
+
+## Software updates
+
+From version 1.2.0, LocalSeek checks for new releases automatically and offers
+installation in the app. Use **Settings → Updates** to disable checks, include
+development previews, or check manually. Install an updater-enabled DMG once if
+your existing version has no update command. See [update details](UPDATES.md).

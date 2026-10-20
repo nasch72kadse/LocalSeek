@@ -7,11 +7,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let index = IndexService()
     let loginItem = LoginItemManager()
     let shortcut = GlobalShortcut()
+    let updates = UpdateController(engine: SparkleUpdateEngine())
     private var searchWindow: NSWindow?
     private var onboardingWindow: NSWindow?
-    private lazy var settingsWindow = SettingsWindowController(makeContent: { [index, loginItem, shortcut] in
+    private lazy var settingsWindow = SettingsWindowController(makeContent: { [index, loginItem, shortcut, updates] in
         NSHostingView(rootView: SettingsView().environmentObject(index)
-            .environmentObject(loginItem).environmentObject(shortcut))
+            .environmentObject(loginItem).environmentObject(shortcut).environmentObject(updates))
     })
     private var observers: [NSObjectProtocol] = []
     private var powerSource: CFRunLoopSource?
@@ -20,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func applicationDidFinishLaunching(_ notification: Notification) {
         shortcut.action = { [weak self] in self?.showSearch() }
         shortcut.start()
+        updates.start()
         trace("finished-launching; shortcut: " + (shortcut.error ?? "ready"))
         for name in [ProcessInfo.thermalStateDidChangeNotification, NSNotification.Name.NSProcessInfoPowerStateDidChange] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.index.systemResourcesChanged() } })

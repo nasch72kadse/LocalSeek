@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct StatusView: View {
     @EnvironmentObject var index: IndexService
     @EnvironmentObject var loginItem: LoginItemManager
+    @EnvironmentObject var updates: UpdateController
     let showSearch: () -> Void
     let showSettings: () -> Void
 
@@ -66,6 +67,8 @@ struct StatusView: View {
                 Button("Einstellungen…", action: showSettings)
                     .keyboardShortcut(",", modifiers: .command)
             }
+
+            UpdateCheckButton(updates: updates)
 
             Button("Beenden") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.borderless)

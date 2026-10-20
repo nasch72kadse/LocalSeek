@@ -31,6 +31,11 @@ class LocalReleaseTests(unittest.TestCase):
             return SHA
         return ''
 
+    def setUp(self):
+        self.feed_preflight = patch.object(release.updates, 'preflight', return_value=dict(parent=None, content=None))
+        self.feed_preflight.start()
+        self.addCleanup(self.feed_preflight.stop)
+
     def test_unsigned_and_wrong_certificate_stop_before_upload(self):
         for identity in ('-', '', 'Apple Development: Example'):
             with self.subTest(identity=identity), patch.dict(os.environ,
@@ -59,7 +64,7 @@ class LocalReleaseTests(unittest.TestCase):
                 return self.preflight_run(*args, **kwargs)
             with self.subTest(branch=branch), patch.dict(os.environ, self.environment(), clear=True), \
                     patch.object(release, 'run', side_effect=command), \
-                    patch.object(Path, 'read_text', return_value='  MARKETING_VERSION: "1.2.3"\n'):
+                    patch.object(Path, 'read_text', return_value='  MARKETING_VERSION: "1.2.3"\n  CURRENT_PROJECT_VERSION: 6\n'):
                 plan = release.preflight()
                 expected = 'v1.2.3' if branch == 'main' else 'v1.2.3-dev.' + SHA[:12]
                 self.assertEqual(plan['tag'], expected)
@@ -70,7 +75,7 @@ class LocalReleaseTests(unittest.TestCase):
             return self.preflight_run(*args, **kwargs)
         with patch.dict(os.environ, self.environment(), clear=True), \
                 patch.object(release, 'run', side_effect=existing), \
-                patch.object(Path, 'read_text', return_value='  MARKETING_VERSION: "1.2.3"\n'):
+                patch.object(Path, 'read_text', return_value='  MARKETING_VERSION: "1.2.3"\n  CURRENT_PROJECT_VERSION: 6\n'):
             with self.assertRaisesRegex(RuntimeError, 'existiert bereits'):
                 release.preflight()
 
@@ -85,6 +90,24 @@ class LocalReleaseTests(unittest.TestCase):
                     patch.object(release, 'run', side_effect=command):
                 with self.assertRaises(RuntimeError):
                     release.preflight()
+
+    def test_feed_retry_requires_existing_tag_for_the_exact_source_commit(self):
+        import json
+        for target in (SHA, 'c' * 40):
+            def command(*args, **kwargs):
+                if any('/git/matching-refs/' in arg for arg in args):
+                    return 'refs/tags/v1.2.3'
+                if any('/git/ref/tags/' in arg for arg in args):
+                    return json.dumps(dict(object=dict(type='commit', sha=target)))
+                return self.preflight_run(*args, **kwargs)
+            with self.subTest(target=target), patch.dict(os.environ, self.environment(), clear=True), \
+                    patch.object(release, 'run', side_effect=command), \
+                    patch.object(Path, 'read_text', return_value='  MARKETING_VERSION: "1.2.3"\n  CURRENT_PROJECT_VERSION: 6\n'):
+                if target == SHA:
+                    self.assertTrue(release.preflight(resume=True)['resume'])
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'current source commit'):
+                        release.preflight(resume=True)
 
     def test_signature_requires_team_timestamp_runtime_and_stapled_ticket(self):
         good = f'Authority=Developer ID Application: Example ({TEAM})\nTeamIdentifier={TEAM}\nTimestamp=now\nflags=0x10000(runtime)\n'
@@ -115,8 +138,8 @@ class LocalReleaseTests(unittest.TestCase):
             (build / 'last-built-configuration.txt').write_text('Release')
             (build / 'source-checksums.txt').write_text('receipt\n')
             plan = dict(repository='owner/LocalSeek', commit=SHA, branch='dev', version='1.1.0',
-                        tag='v1.1.0-dev.' + SHA[:12], team=TEAM)
-            for failure in ('tests', 'notary', 'offline', None):
+                        tag='v1.1.0-dev.' + SHA[:12], team=TEAM, build_number=6, feed=dict(parent=None, content=None))
+            for failure in ('tests', 'notary', 'offline', 'sparkle', 'upload', 'assets', None):
                 calls = []
                 def command(*args, **kwargs):
                     calls.append(args)
@@ -128,19 +151,32 @@ class LocalReleaseTests(unittest.TestCase):
                         raise RuntimeError('Unit/integration test gate failed')
                     if failure == 'offline' and args[:2] == ('bash', 'Scripts/verify-offline.sh'):
                         raise RuntimeError('Offline test failed')
+                    if failure == 'upload' and args[:3] == ('gh', 'release', 'create'):
+                        raise RuntimeError('Upload failed')
+                    if any('/releases/tags/' in arg for arg in args):
+                        import hashlib, json
+                        return json.dumps(dict(draft=False, prerelease=True, assets=[
+                            dict(name=dmg.name, size=dmg.stat().st_size, digest='sha256:' + (hashlib.sha256(dmg.read_bytes()).hexdigest() if failure != 'assets' else 'wrong')),
+                            dict(name=dmg.name + '.sha256')]))
                     return ''
                 with self.subTest(failure=failure), patch.object(release, 'ROOT', root), \
                         patch.object(release, 'run', side_effect=command), \
+                        patch.object(release.updates, 'prepare', return_value=package / 'appcast.xml',
+                            side_effect=RuntimeError('Sparkle signature failed') if failure == 'sparkle' else None), \
+                        patch.object(release.updates, 'publish') as update_publish, \
                         patch.object(release, 'verify_signing',
                             side_effect=RuntimeError('Notary validation failed') if failure == 'notary' else None):
                     if failure:
                         with self.assertRaises(RuntimeError):
                             release.publish(plan)
-                        self.assertFalse(any(call[0] == 'gh' for call in calls))
+                        update_publish.assert_not_called()
+                        if failure not in ('upload', 'assets'):
+                            self.assertFalse(any(call[0] == 'gh' for call in calls))
                     else:
                         with contextlib.redirect_stdout(io.StringIO()):
                             release.publish(plan)
-                        tag_create, upload = [call for call in calls if call[0] == 'gh']
+                        tag_create, upload, metadata = [call for call in calls if call[0] == 'gh']
+                        update_publish.assert_called_once()
                         self.assertIn('sha=' + SHA, tag_create)
                         self.assertIn('ref=refs/tags/' + plan['tag'], tag_create)
                         self.assertIn('--verify-tag', upload)
