@@ -39,7 +39,7 @@ cp "$MODEL" "$APP/Contents/Resources/Models/"
 cp Models/manifest.json "$APP/Contents/Resources/Models/manifest.json"
 cp Licenses/* THIRD_PARTY_NOTICES.md Package.resolved Models/native-dependencies.json "$APP/Contents/Resources/ThirdParty/"
 cp README.md "$APP/Contents/Resources/README.md"
-cp HANDOFF/INSTALLATION.md "$APP/Contents/Resources/INSTALLATION.md"
+cp docs/INSTALLATION.md "$APP/Contents/Resources/INSTALLATION.md"
 if [[ -f build/source-checksums.txt ]]; then cp build/source-checksums.txt "$APP/Contents/Resources/source-checksums.txt"; fi
 # Object-file debug references can contain absolute paths even when compiler
 # file macros are mapped. Strip those references before the final signatures.
@@ -70,21 +70,21 @@ fi
 STAGING="$DEST/DiskImage"
 mkdir -p "$STAGING"
 ditto "$APP" "$STAGING/LocalSeek.app"
-ln -s /Applications "$STAGING/Programme"
-cat > "$STAGING/Installieren.txt" <<'INSTALL'
-LocalSeek installieren
+ln -s /Applications "$STAGING/Applications"
+cat > "$STAGING/Install.txt" <<'INSTALL'
+Install LocalSeek
 
-1. LocalSeek.app auf den Ordner „Programme“ ziehen.
-2. Das Laufwerk „LocalSeek“ im Finder auswerfen.
-3. LocalSeek aus „Programme“ starten und die gewünschten Suchordner auswählen.
+1. Drag LocalSeek.app to the Applications shortcut.
+2. Eject the LocalSeek disk image in Finder.
+3. Open LocalSeek from Applications and choose the folders to search.
 
-Enthalten: Suchmodell, OCR-Hilfsprozess, native Bibliotheken und Metal.
-Keine zusätzlichen Downloads oder Terminal-Befehle erforderlich.
-Voraussetzung: Apple Silicon (M1 oder neuer), macOS 14 oder neuer.
+Includes the search model, OCR helper, native libraries, and Metal components.
+No additional downloads or Terminal commands are required.
+Requires Apple Silicon (M1 or later) and macOS 14 or later.
 
-Ein privat signierter, nicht notarisierter Build kann von macOS beim Start
-blockiert werden. Die Freigabe hängt von der konkreten macOS-Meldung und den
-Sicherheitsvorgaben dieses Macs ab. Die App verändert keine Sicherheitsregeln.
+macOS may block an ad-hoc-signed, non-notarized development build. Approval depends
+on the warning shown and the security policies of the destination Mac.
+LocalSeek does not change system security settings.
 INSTALL
 DMG="$DEST/LocalSeek-${VERSION}-arm64.dmg"
 hdiutil create -quiet -volname LocalSeek -srcfolder "$STAGING" -format UDZO "$DMG"

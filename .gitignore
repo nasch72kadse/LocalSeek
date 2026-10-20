@@ -1,38 +1,82 @@
-# Xcode / Build
-build/
-DerivedData/
-*.xcuserstate
-xcuserdata/
-*.xcworkspace/xcuserdata/
+# macOS metadata and editor state
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
 
-# XcodeGen generiert .xcodeproj aus project.yml → nicht committen
-LocalSeek.xcodeproj/
+# Generated Xcode project, per-user settings, and build products
+/LocalSeek.xcodeproj/
+/build/
+/dist/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.xcresult/
+*.xcarchive/
+*.xcactivitylog
+*.dSYM/
+*.dSYM.zip
+*.app/
+*.dmg
+*.dmg.sha256
+*.pkg
+*.o
+*.a
+*.dylib
+*.metallib
 
-# Swift Package Manager
+# Dependency caches and local Python environments
 .build/
 .swiftpm/
+.cache/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Modelle & native Binärbibliotheken (werden separat verifiziert eingebunden, Spec §10)
-Models/*.gguf
-Native/**/*.a
-Native/**/*.dylib
+# Model weights are supplied separately and verified by manifest
+*.gguf
+*.safetensors
+*.onnx
 
-# Lokale Zugangsdaten, Signierschlüssel und Suchindex
+# Local credentials, signing material, and search indexes
 .env
 .env.*
 !.env.example
 !.env.local.example
 *.p12
+*.pfx
 *.p8
 *.pem
 *.key
 *.mobileprovision
 *.provisionprofile
+*.keychain
+*.keychain-db
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-*.keychain
-*.keychain-db
-__pycache__/
-*.pyc
+*.sqlite-journal
+
+# Logs, temporary exports, and local development notes
+*.log
+*.tmp
+*.temp
+/HANDOFF/
+/CLAUDE.md
+/WORK_PLAN.md
+/OPTIMIZATION_PLAN.md
+/SPEC.md
+/docs/superpowers/

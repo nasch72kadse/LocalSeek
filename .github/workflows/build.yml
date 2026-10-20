@@ -130,13 +130,13 @@ jobs:
           {
             echo '### LocalSeek DMG'
             printf 'Branch: `%s` · Commit: `%s`\n\n' "$GITHUB_REF_NAME" "$GITHUB_SHA"
-            printf '[Fertige Datei herunterladen](%s)\n\n' "$ARTIFACT_URL"
+            printf '[Download the complete app](%s)\n\n' "$ARTIFACT_URL"
             if [[ -n "${LOCALSEEK_NOTARY_PROFILE:-}" ]]; then
-              echo 'Developer ID signiert und notariert.'
+              echo 'Developer ID signed and notarized.'
             else
-              echo 'Privat signiert, nicht notariert. Apple-Secrets sind nur auf main aktiv.'
+              echo 'Ad-hoc signed, not notarized. Apple signing secrets are used only on main.'
             fi
-            echo 'Enthält Modell und OCR-Helper. Ziel: Apple Silicon, macOS 14+.'
+            echo 'Includes the model and OCR helper. Requires Apple Silicon and macOS 14+.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload diagnostics if a check fails
