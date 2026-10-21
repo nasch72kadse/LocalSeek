@@ -32,6 +32,8 @@ fi
 VERSION="$(plutil -extract CFBundleShortVersionString raw build/DerivedData/Build/Products/Release/LocalSeek.app/Contents/Info.plist)"
 mkdir -p build/packages
 DEST="$(mktemp -d "build/packages/LocalSeek-${VERSION}-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
+printf '%s\n' "$$" > "$DEST/.build-active"
+trap 'rm -f "$CHECKS" "$DEST/.build-active"' EXIT
 APP="$DEST/LocalSeek.app"
 ditto build/DerivedData/Build/Products/Release/LocalSeek.app "$APP"
 mkdir -p "$APP/Contents/Resources/Models" "$APP/Contents/Resources/ThirdParty"
@@ -105,7 +107,7 @@ if [[ -n "${LOCALSEEK_NOTARY_PROFILE:-}" ]]; then
 fi
 bash Scripts/verify-artifact.sh "$DMG"
 
-# Publish only after all checks succeed. Keep the previous timestamped releases.
+# Update the current package only after all checks succeed.
 cp "$DMG" build/LocalSeek.dmg.pending
 mv -f build/LocalSeek.dmg.pending build/LocalSeek.dmg
 shasum -a 256 build/LocalSeek.dmg > build/LocalSeek.dmg.sha256
@@ -116,3 +118,7 @@ printf 'Archivierte Version: %s/%s\n' "$PWD" "$DMG"
 if [[ -z "${LOCALSEEK_NOTARY_PROFILE:-}" ]]; then
   printf 'Startfreigabe: nicht notariert; macOS kann den ersten Start blockieren.\n'
 fi
+rm -f "$DEST/.build-active"
+CLEANUP_ARGS=(--apply --record-package "$DEST")
+if [[ "$LOCALSEEK_PUBLISH_RELEASE" == 1 ]]; then CLEANUP_ARGS+=(--awaiting-publication); fi
+python3 Scripts/build_retention.py "${CLEANUP_ARGS[@]}" || printf 'Build cleanup could not finish.\n' >&2

@@ -46,8 +46,8 @@ Scripts/build.sh
 ```
 
 Every successful release build ends with **`build/LocalSeek.dmg`** and its checksum.
-The DMG includes the model and runtime components. Timestamped packages are retained
-under `build/packages/`; `build/latest-artifact.txt` identifies the latest one.
+The DMG includes the model and runtime components. The two newest completed packages
+are retained under `build/packages/`; `build/latest-artifact.txt` identifies the latest one.
 
 The build generates `LocalSeek.xcodeproj` from `project.yml`, resolves the versions
 in `Package.resolved`, and compiles static native libraries for arm64/macOS 14.
@@ -57,6 +57,31 @@ Without signing configuration the package is ad-hoc signed for development.
 For distribution, see [local signing and notarization](LOCAL-RELEASE.md).
 Local settings belong in `.env.local`, copied from [the example](../.env.local.example);
 GitHub Actions never loads that file.
+
+## Automatic local cleanup
+
+Builds, packaging, publication, and release tests apply bounded local retention:
+
+- Keep the two newest completed packages, including their apps and DMGs.
+- Remove staging copies and notarization ZIPs after the workflow succeeds. When
+  publication is enabled, wait until both the GitHub Release and update feed succeed.
+- Keep the three newest release-test result bundles, including failed runs.
+- Preserve live builds/tests, packages referenced by the latest-package pointers,
+  and the result bundle referenced by the current release-test receipt.
+- Remove abandoned incomplete package directories after 24 hours.
+
+Current pointers and active jobs can temporarily retain additional packages or
+results. Compiler caches, dependency downloads, the model, small diagnostic reports,
+and backup/investigation folders are preserved. GitHub Releases are unaffected.
+
+Preview or apply the same policy manually:
+
+```bash
+python3 Scripts/build_retention.py
+python3 Scripts/build_retention.py --apply
+```
+
+Cleanup failures produce a warning rather than invalidate a successful publication.
 
 ## Run checks
 

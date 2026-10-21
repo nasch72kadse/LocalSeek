@@ -101,3 +101,9 @@ References: [GitHub CLI](https://cli.github.com/manual/gh_release_create),
 The same local command signs and publishes the Sparkle feed after verifying the
 GitHub Release assets. See [update keys, channels, and recovery](UPDATES.md).
 The configured release Mac already holds its update key in the login Keychain.
+
+After the release assets and feed are published successfully, local cleanup removes
+the notarization ZIPs and DMG staging copy, and retains the two newest completed
+packages. A failed publication keeps its intermediate files for diagnosis/retry.
+The three newest release-test bundles are retained; active work and the current
+test receipt are protected. See [local retention rules](BUILDING.md#automatic-local-cleanup).

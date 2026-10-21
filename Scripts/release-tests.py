@@ -14,6 +14,9 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'Scripts'))
+import build_retention as retention
+
 REPORTS = ROOT / 'build/reports'
 RECEIPT = REPORTS / 'release-tests.json'
 
@@ -89,19 +92,20 @@ def run_tests():
     if digest.hexdigest() != manifest['sha256']:
         raise RuntimeError('Das gepinnte Modell fehlt für die echten Embedding-Integrationstests.')
     bundle = REPORTS / ('release-tests-' + uuid.uuid4().hex + '.xcresult')
-    environment = os.environ | {'LOCALSEEK_TEST_MODEL': str(model), 'LOCALSEEK_TEST_RESULT_BUNDLE': str(bundle)}
-    logged(['bash', 'Scripts/test.sh'], 'tests.log', environment=environment)
-    summary = json.loads(output('xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(bundle)))
-    (REPORTS / 'test-summary.json').write_text(json.dumps(summary, indent=2) + '\n')
-    passed = passed_swift_tests(summary)
-    if before != inputs():
-        raise RuntimeError('Quellstand/System hat sich während der Tests geändert; erneut testen.')
-    receipt = dict(inputs=before, completedAt=time.time(), passedTests=passed,
-                   failedTests=0, skippedTests=0, toolTests=int(count[1]), resultBundle=str(bundle))
-    pending = RECEIPT.with_suffix('.pending')
-    pending.write_text(json.dumps(receipt, indent=2) + '\n')
-    pending.replace(RECEIPT)
-    print(f"Release-Tests bestanden: {receipt['passedTests']} Swift-Tests, {receipt['toolTests']} Build-Tests; keine Skips.")
+    with retention.active_test_bundle(ROOT, bundle):
+        environment = os.environ | {'LOCALSEEK_TEST_MODEL': str(model), 'LOCALSEEK_TEST_RESULT_BUNDLE': str(bundle)}
+        logged(['bash', 'Scripts/test.sh'], 'tests.log', environment=environment)
+        summary = json.loads(output('xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(bundle)))
+        (REPORTS / 'test-summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+        passed = passed_swift_tests(summary)
+        if before != inputs():
+            raise RuntimeError('Quellstand/System hat sich während der Tests geändert; erneut testen.')
+        receipt = dict(inputs=before, completedAt=time.time(), passedTests=passed,
+                       failedTests=0, skippedTests=0, toolTests=int(count[1]), resultBundle=str(bundle))
+        pending = RECEIPT.with_suffix('.pending')
+        pending.write_text(json.dumps(receipt, indent=2) + '\n')
+        pending.replace(RECEIPT)
+        print(f"Release-Tests bestanden: {receipt['passedTests']} Swift-Tests, {receipt['toolTests']} Build-Tests; keine Skips.")
 
 
 def main():

@@ -139,7 +139,7 @@ class LocalReleaseTests(unittest.TestCase):
             (build / 'source-checksums.txt').write_text('receipt\n')
             plan = dict(repository='owner/LocalSeek', commit=SHA, branch='dev', version='1.1.0',
                         tag='v1.1.0-dev.' + SHA[:12], team=TEAM, build_number=6, feed=dict(parent=None, content=None))
-            for failure in ('tests', 'notary', 'offline', 'sparkle', 'upload', 'assets', None):
+            for failure in ('tests', 'notary', 'offline', 'sparkle', 'upload', 'assets', 'feed', None):
                 calls = []
                 def command(*args, **kwargs):
                     calls.append(args)
@@ -163,20 +163,30 @@ class LocalReleaseTests(unittest.TestCase):
                         patch.object(release, 'run', side_effect=command), \
                         patch.object(release.updates, 'prepare', return_value=package / 'appcast.xml',
                             side_effect=RuntimeError('Sparkle signature failed') if failure == 'sparkle' else None), \
-                        patch.object(release.updates, 'publish') as update_publish, \
+                        patch.object(release.updates, 'publish',
+                            side_effect=RuntimeError('Feed upload failed') if failure == 'feed' else None) as update_publish, \
+                        patch.object(release.retention, 'record_package') as record_package, \
+                        patch.object(release.retention, 'automatic_cleanup') as cleanup, \
                         patch.object(release, 'verify_signing',
                             side_effect=RuntimeError('Notary validation failed') if failure == 'notary' else None):
                     if failure:
                         with self.assertRaises(RuntimeError):
                             release.publish(plan)
-                        update_publish.assert_not_called()
-                        if failure not in ('upload', 'assets'):
+                        record_package.assert_not_called()
+                        cleanup.assert_not_called()
+                        if failure == 'feed':
+                            update_publish.assert_called_once()
+                        else:
+                            update_publish.assert_not_called()
+                        if failure not in ('upload', 'assets', 'feed'):
                             self.assertFalse(any(call[0] == 'gh' for call in calls))
                     else:
                         with contextlib.redirect_stdout(io.StringIO()):
                             release.publish(plan)
                         tag_create, upload, metadata = [call for call in calls if call[0] == 'gh']
                         update_publish.assert_called_once()
+                        record_package.assert_called_once_with(root, package.resolve())
+                        cleanup.assert_called_once_with(root)
                         self.assertIn('sha=' + SHA, tag_create)
                         self.assertIn('ref=refs/tags/' + plan['tag'], tag_create)
                         self.assertIn('--verify-tag', upload)

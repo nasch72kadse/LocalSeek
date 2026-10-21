@@ -37,4 +37,5 @@ if [[ "${CONFIGURATION:-Release}" == 'Release' ]]; then
   fi
 else
   printf 'Debug-Build fertig. Für die übertragbare DMG einen Release-Build ausführen.\n'
+  python3 Scripts/build_retention.py --apply || printf 'Build cleanup could not finish.\n' >&2
 fi

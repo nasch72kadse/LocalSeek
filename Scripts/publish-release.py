@@ -13,6 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "Scripts"))
 import update_feed as updates
+import build_retention as retention
 
 
 def run(*args, visible=False):
@@ -175,6 +176,11 @@ def publish(plan):
             raise RuntimeError('Published release assets are incomplete; update feed was not changed.')
         updates.publish(run, plan, feed)
     print(f"Signiertes Release: https://github.com/{plan['repository']}/releases/tag/{plan['tag']}")
+    try:
+        retention.record_package(ROOT, app.parent)
+    except (OSError, ValueError) as error:
+        print('Could not record completed publication for cleanup: ' + str(error), file=sys.stderr)
+    retention.automatic_cleanup(ROOT)
 
 
 def main():
