@@ -211,7 +211,9 @@ final class CompletionTests: XCTestCase {
         struct Metadata: FileMetadataProviding {
             let count: Count
             func metadata(for url: URL) throws -> LocalFileMetadata {
-                count.increment(); return try LocalFileMetadataProvider().metadata(for: url)
+                let info = try LocalFileMetadataProvider().metadata(for: url)
+                if info.isRegular { count.increment() }
+                return info
             }
         }
         let db = try database()
@@ -223,7 +225,8 @@ final class CompletionTests: XCTestCase {
         try db.dbPool.write { try $0.execute(sql: "CREATE TRIGGER fail_file_insert BEFORE INSERT ON files BEGIN SELECT RAISE(ABORT, 'test'); END") }
         let count = Count()
         XCTAssertThrowsError(try DirectoryScanner(metadata: Metadata(count: count)).scan(source: source, into: db, batchSize: 1))
-        XCTAssertEqual(count.value, 2, "Only root and the first file should be inspected after a failed write")
+        XCTAssertEqual(count.value, 1, "No second file should be inspected after a failed batch write")
+        XCTAssertEqual(try db.fileCount(), 0)
     }
     func testWatcherCanStopInsideItsOwnCallback() throws {
         final class Holder: @unchecked Sendable {

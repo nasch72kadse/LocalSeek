@@ -22,7 +22,7 @@ public struct IndexWorker: Sendable {
             try await checkpoint(.metadata)
             do {
                 if try await !scans.metadataBatch(source: source, job: job, db: db) {
-                    return [.init(sourceId: source.id, kind: .metadata, priority: 25, cursor: 1), .init(sourceId: source.id, kind: .content)]
+                    return [.init(sourceId: source.id, kind: .content), .init(sourceId: source.id, kind: .metadata, priority: IndexJobKind.content.priority, cursor: 1)]
                 }
             }
             catch DirectoryScanner.ScanError.partialEnumeration {
@@ -34,7 +34,7 @@ public struct IndexWorker: Sendable {
             guard let source else { return [] }
             try await checkpoint(.metadata)
             if try await !scans.changesBatch(source: source, job: job, db: db) {
-                return [.init(sourceId: source.id, kind: .changes, priority: 25, cursor: 1), .init(sourceId: source.id, kind: .content)]
+                return [.init(sourceId: source.id, kind: .content), .init(sourceId: source.id, kind: .changes, priority: IndexJobKind.content.priority, cursor: 1)]
             }
             return []
         case .content:

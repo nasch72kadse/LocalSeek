@@ -121,4 +121,23 @@ final class ScanSliceTests: XCTestCase {
         XCTAssertEqual(try db.searchFilenames("fresh.txt").count, 1)
         XCTAssertTrue(try db.searchFilenames("file0.txt").isEmpty)
     }
+
+    func testMetadataContinuationIsNotStarvedByContinuingContentWork() async throws {
+        let (db, _, source) = try fixture((0..<600).map { "file\($0).txt" })
+        let worker = IndexWorker(db: db)
+        try db.enqueueJobs([.init(sourceId: source.id, kind: .metadata)])
+        let metadata = try XCTUnwrap(try db.claimNextJob())
+        let followUps = try await worker.perform(metadata, checkpoint: { _ in try Task.checkCancellation() })
+        try db.finishJob(metadata, followUps: followUps)
+        let firstCount = try db.fileCount()
+        let content = try XCTUnwrap(try db.claimNextJob())
+        XCTAssertEqual(content.kind, .content)
+        // Simulate a PDF/content slice that has more work remaining.
+        try db.finishJob(content, followUps: [.init(sourceId: source.id, kind: .content)])
+        let next = try XCTUnwrap(try db.claimNextJob())
+        XCTAssertEqual(next.kind, .metadata)
+        let more = try await worker.perform(next, checkpoint: { _ in try Task.checkCancellation() })
+        try db.finishJob(next, followUps: more)
+        XCTAssertGreaterThan(try db.fileCount(), firstCount)
+    }
 }
