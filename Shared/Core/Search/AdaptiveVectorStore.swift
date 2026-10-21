@@ -115,14 +115,18 @@ public final class AdaptiveVectorIndex: @unchecked Sendable {
     }
 
     func requestBuild(modelId: String) {
-        guard let database, (try? database.hasVectorCount(minimumVectors, modelId: modelId)) == true else { return }
+        guard let database else { return }
+        if let current = lock.withLock({ ready }), current.modelId == modelId,
+           (try? database.vectorRevision(modelId: modelId)) == current.revision { return }
         let request = lock.withLock {
             let now = ProcessInfo.processInfo.systemUptime
             guard now >= pressuredUntil, now - lastRequest >= 30 else { return false }
             lastRequest = now
             return true
         }
-        if request { try? database.enqueueJobs([.init(kind: .vectorIndex)]) }
+        if request, (try? database.hasVectorCount(minimumVectors, modelId: modelId)) == true {
+            try? database.enqueueJobs([.init(kind: .vectorIndex)])
+        }
     }
 
     /// Runs on the existing serial background queue. Checkpoints retain a

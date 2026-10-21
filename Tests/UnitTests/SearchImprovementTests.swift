@@ -131,6 +131,7 @@ final class SearchImprovementTests: XCTestCase {
         let store = AdaptiveVectorStore(db: db, index: index)
         let matches = try store.nearestDocuments(to: [1, 0, 0], modelId: "m", limit: 50, matching: filter, parsedQuery: .init())
         XCTAssertEqual(try db.fetchChunkHits(chunkIds: matches.map(\.chunkId)).map(\.fileId), [pdf])
+        XCTAssertNil(try db.claimNextJob(), "An exact filter plan must not schedule a rebuild of the current graph")
         var source = try XCTUnwrap(db.source(id: "s")); source.enabled = false
         try db.upsertSource(source)
         XCTAssertTrue(try store.nearestDocuments(to: [1, 0, 0], modelId: "m", limit: 50, matching: filter, parsedQuery: .init()).isEmpty)

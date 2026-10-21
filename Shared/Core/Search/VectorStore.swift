@@ -71,6 +71,7 @@ struct VectorHeap {
     private var entries: [Entry] = []
     private var positions: [Int64: Int] = [:]
     let capacity: Int
+    init(capacity: Int) { self.capacity = max(0, capacity) }
     private func worse(_ a: VectorMatch, _ b: VectorMatch) -> Bool {
         a.score < b.score || (a.score == b.score && a.chunkId > b.chunkId)
     }
