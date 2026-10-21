@@ -13,32 +13,40 @@ public struct PDFExtractor: DocumentExtractor {
     public let supportedExtensions: Set<String> = ["pdf"]
 
     public func extract(fileURL: URL, context: ExtractionContext) throws -> ExtractedDocument {
+        let batch = try extractBatch(fileURL: fileURL, startPage: 0, maxPages: .max, maxSeconds: .infinity, context: context)
+        return ExtractedDocument(title: batch.title, segments: batch.segments)
+    }
+
+    func extractBatch(fileURL: URL, startPage: Int, maxPages: Int, maxSeconds: TimeInterval,
+                      context: ExtractionContext) throws -> PDFPageBatch {
+        try context.checkpoint()
         guard let pdf = PDFDocument(url: fileURL) else { throw ExtractionError.unreadable }
-
-        guard pdf.pageCount <= 1000 else { throw ExtractionError.resourceLimit }
+        guard pdf.pageCount <= 1000, startPage >= 0, startPage <= pdf.pageCount, maxPages > 0 else { throw ExtractionError.resourceLimit }
+        let end = startPage + min(pdf.pageCount - startPage, maxPages)
+        let deadline = ProcessInfo.processInfo.systemUptime + maxSeconds
         var segments: [DocumentSegment] = []
-        var extractedBytes = 0
-        for index in 0..<pdf.pageCount {
+        var bytes = 0, nextPage = startPage
+        for index in startPage..<end {
+            if index > startPage, ProcessInfo.processInfo.systemUptime >= deadline { break }
             try context.checkpoint()
-            guard let page = pdf.page(at: index) else { continue }
-            var text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            var usedOCR = false
-            if text.isEmpty, let image = Self.render(page) {
-                usedOCR = true
-                text = try ocr.recognizeLines(in: image, context: context)
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let page = pdf.page(at: index) {
+                var text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                var usedOCR = false
+                if text.isEmpty, let image = Self.render(page) {
+                    usedOCR = true
+                    text = try ocr.recognizeLines(in: image, context: context).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                if !text.isEmpty {
+                    bytes += text.utf8.count
+                    guard bytes <= context.maxBytes else { throw ExtractionError.resourceLimit }
+                    segments.append(DocumentSegment(text: text, location: .page(index + 1), kind: usedOCR ? .ocr : .body))
+                }
             }
-            guard !text.isEmpty else { continue }
-            extractedBytes += text.utf8.count
-            guard extractedBytes <= context.maxBytes else { throw ExtractionError.resourceLimit }
-            segments.append(DocumentSegment(text: text, location: .page(index + 1), kind: usedOCR ? .ocr : .body))
+            nextPage = index + 1
         }
-
         let title = pdf.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String
-        return ExtractedDocument(
-            title: title?.isEmpty == false ? title : nil,
-            segments: segments)
+        return PDFPageBatch(title: title?.isEmpty == false ? title : nil, segments: segments,
+            nextPage: nextPage, totalPages: pdf.pageCount, bytes: bytes)
     }
 
     /// Rastert eine Seite (`.mediaBox`) auf ~200 dpi für die OCR. `nil` bei leerer Box.
@@ -62,4 +70,12 @@ public struct PDFExtractor: DocumentExtractor {
         page.draw(with: .mediaBox, to: context)
         return context.makeImage()
     }
+}
+
+struct PDFPageBatch: Sendable {
+    let title: String?
+    let segments: [DocumentSegment]
+    let nextPage: Int
+    let totalPages: Int
+    let bytes: Int
 }

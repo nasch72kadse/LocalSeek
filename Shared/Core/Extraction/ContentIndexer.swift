@@ -63,7 +63,10 @@ public struct ContentIndexer: Sendable {
                     let cache = DatabaseOCRCache(db: db, fileId: fileId)
                     var fileContext = context
                     if fileContext.ocrCache == nil { fileContext.ocrCache = cache }
-                    let document = try access.read(at: url) { coordinatedURL in
+                    let pdf = registry.extractor(for: file.fileExtension) as? PDFExtractor
+                    let progress = try pdf == nil ? nil : db.pdfProgress(file: file, version: chunker.version)
+                    var pdfBatch: PDFPageBatch?
+                    let extracted: ExtractedDocument? = try access.read(at: url) { coordinatedURL in
                         let actual = try LocalFileMetadataProvider().metadata(for: coordinatedURL)
                         guard actual.size == file.size,
                               file.fileIdentity == nil || file.fileIdentity == actual.identity else {
@@ -72,14 +75,31 @@ public struct ContentIndexer: Sendable {
                         if let expected = file.mtime {
                             guard abs(actual.modificationDate.timeIntervalSince(expected)) < 0.0011 else { throw ExtractionError.changedDuringRead }
                         }
+                        if let pdf {
+                            var pageContext = fileContext
+                            pageContext.maxBytes -= progress?.bytes ?? 0
+                            pdfBatch = try pdf.extractBatch(fileURL: coordinatedURL, startPage: progress?.nextPage ?? 0,
+                                maxPages: maxSeconds.isFinite ? 16 : .max,
+                                maxSeconds: max(0.001, deadline - ProcessInfo.processInfo.systemUptime), context: pageContext)
+                            return nil
+                        }
                         return try registry.extract(fileURL: coordinatedURL, context: fileContext)
+                    }
+                    var document = extracted
+                    var usedKeys = context.ocrCache == nil ? cache.usedKeys : nil
+                    if let pdfBatch {
+                        try db.savePDFBatch(pdfBatch, file: file, version: chunker.version, previous: progress,
+                            keys: usedKeys ?? [], maxBytes: context.maxBytes)
+                        guard pdfBatch.nextPage == pdfBatch.totalPages else { return result }
+                        document = try db.completedPDF(fileId: fileId)
+                        usedKeys = context.ocrCache == nil ? (progress?.ocrKeys ?? []).union(usedKeys ?? []) : nil
                     }
                     if let document {
                         let chunks = try await chunker.chunks(from: document, fileId: fileId)
                         try Task.checkCancellation()
                         try db.storeContent(fileId: fileId, chunks: chunks,
                             mtime: file.mtime ?? Date(timeIntervalSince1970: 0), version: chunker.version,
-                            usedOCRKeys: context.ocrCache == nil ? cache.usedKeys : nil)
+                            usedOCRKeys: usedKeys)
                     }
                     result.processed += 1
                 } catch is CancellationError { throw CancellationError() }

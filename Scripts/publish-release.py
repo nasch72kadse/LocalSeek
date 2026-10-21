@@ -145,6 +145,9 @@ def publish(plan):
                          'The DMG includes the search model, OCR helper, and runtime libraries.\n\n'
                          'Automatic update checks and in-app installation are included. Install this '
                          'DMG once to enable future updates; older builds cannot update themselves.\n')
+        version_notes = ROOT / 'docs/releases' / (plan['version'] + '.md')
+        if version_notes.is_file():
+            notes.write_text(notes.read_text() + '\n' + version_notes.read_text())
         if not plan.get("resume"):
             # Atomic tag creation fails if another publisher claimed the tag since
             # preflight. Never allow gh to reuse a tag pointing to another commit.

@@ -5,6 +5,7 @@ public struct IndexWorker: Sendable {
     private let content: ContentIndexer
     private let provider: (any EmbeddingProvider)?
     private let modelId: String?
+    private let scans = IndexScanCoordinator()
 
     public init(db: IndexDatabase, content: ContentIndexer = ContentIndexer(),
                 provider: (any EmbeddingProvider)? = nil, modelId: String? = nil) {
@@ -19,7 +20,11 @@ public struct IndexWorker: Sendable {
         case .metadata:
             guard let source else { return [] }
             try await checkpoint(.metadata)
-            do { try DirectoryScanner().scan(source: source, into: db) }
+            do {
+                if try await !scans.metadataBatch(source: source, job: job, db: db) {
+                    return [.init(sourceId: source.id, kind: .metadata, priority: 25, cursor: 1), .init(sourceId: source.id, kind: .content)]
+                }
+            }
             catch DirectoryScanner.ScanError.partialEnumeration {
                 return [.init(sourceId: source.id, kind: .content),
                         .init(sourceId: source.id, kind: .metadata, notBefore: Date().addingTimeInterval(30))]
@@ -28,11 +33,9 @@ public struct IndexWorker: Sendable {
         case .changes:
             guard let source else { return [] }
             try await checkpoint(.metadata)
-            let events = try db.pendingFileEvents(sourceId: source.id)
-            guard !events.isEmpty else { return [] }
-            try DirectoryScanner().scanChanges(source: source, relativePaths: events.map(\.relativePath), into: db)
-            try Task.checkCancellation()
-            try db.completeFileEvents(events, job: job)
+            if try await !scans.changesBatch(source: source, job: job, db: db) {
+                return [.init(sourceId: source.id, kind: .changes, priority: 25, cursor: 1), .init(sourceId: source.id, kind: .content)]
+            }
             return []
         case .content:
             guard let source else { return [] }

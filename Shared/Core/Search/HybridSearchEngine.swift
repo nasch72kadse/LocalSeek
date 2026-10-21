@@ -30,7 +30,7 @@ public struct HybridSearchEngine: Sendable {
         switch strategy {
         case .exact:
             let names = try db.filenameContentHits(query, filters: filters, limit: limit)
-            let chunks = try db.searchChunks(query, limit: limit * 3, filters: filters)
+            let chunks = try db.searchChunks(query, limit: limit, filters: filters, distinctDocuments: true)
             return groupByDocument(names + chunks, limit: limit)
         case .semantic: return try await semanticHits(query, limit: limit, filters: filters)
         case .hybrid:   return try await hybridHits(query, limit: limit, filters: filters)
@@ -38,26 +38,28 @@ public struct HybridSearchEngine: Sendable {
     }
 
     private func semanticHits(_ query: String, limit: Int, filters: SearchFilters) async throws -> [ContentSearchHit] {
-        guard let ids = try await vectorChunkIds(query, limit: min(2000, limit * 10), filters: filters) else { return [] }
+        guard let ids = try await vectorChunkIds(query, limit: min(2000, limit), filters: filters) else { return [] }
         return groupByDocument(try db.fetchChunkHits(chunkIds: ids), limit: limit)
     }
 
     private func hybridHits(_ query: String, limit: Int, filters: SearchFilters) async throws -> [ContentSearchHit] {
         let nameHits = try db.filenameContentHits(query, filters: filters, limit: limit)
-        let ftsHits = try db.searchChunks(query, limit: limit * 3, filters: filters)
-        let ftsIds = nameHits.map(\.chunkId) + ftsHits.map(\.chunkId)
+        let ftsHits = try db.searchChunks(query, limit: limit, filters: filters, distinctDocuments: true)
+        let lexical = groupByDocument(nameHits + ftsHits, limit: limit)
+        let ftsIds = lexical.map(\.fileId)
         let vecIds: [Int64]?
         do {
-            vecIds = try await vectorChunkIds(query, limit: min(2000, limit * 10), filters: filters)
+            vecIds = try await vectorChunkIds(query, limit: min(2000, limit), filters: filters)
         } catch is EmbeddingError {
             return groupByDocument(nameHits + ftsHits, limit: limit)
         }
         guard let vecIds, !vecIds.isEmpty else {
             return groupByDocument(nameHits + ftsHits, limit: limit)
         }
-        let fusedIds = Self.rrf(fts: ftsIds, vec: vecIds, ftsWeight: ftsWeight, vecWeight: vecWeight, k: rrfK)
-        let fetched = try db.fetchChunkHits(chunkIds: fusedIds.filter { $0 > 0 })
-        let byID = Dictionary(uniqueKeysWithValues: (nameHits + fetched).map { ($0.chunkId, $0) })
+        let fetched = try db.fetchChunkHits(chunkIds: vecIds)
+        let fusedIds = Self.rrf(fts: ftsIds, vec: fetched.map(\.fileId), ftsWeight: ftsWeight, vecWeight: vecWeight, k: rrfK)
+        var byID: [Int64: ContentSearchHit] = [:]
+        for hit in fetched + nameHits + ftsHits { byID[hit.fileId] = hit }
         let exactNames = nameHits.filter { $0.filename.localizedCaseInsensitiveCompare(QueryParser.parse(query).searchText) == .orderedSame }
         return groupByDocument(exactNames + fusedIds.compactMap { byID[$0] }, limit: limit)
     }
@@ -69,7 +71,7 @@ public struct HybridSearchEngine: Sendable {
         let vectors = try await provider.embed([parsed.searchText], kind: .query)
         try Task.checkCancellation()
         guard let qv = vectors.first else { return nil }
-        return try store.nearest(to: qv, modelId: modelId, limit: limit,
+        return try store.nearestDocuments(to: qv, modelId: modelId, limit: limit,
                                  matching: filters, parsedQuery: parsed).map(\.chunkId)
     }
 

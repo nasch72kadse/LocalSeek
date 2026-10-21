@@ -28,7 +28,8 @@ structure that can be rebuilt; it is not the source of truth.
 ## Incremental indexing
 
 File-system events normally schedule work for an individual file or a relevant
-subtree. Events are persisted with revisions so a newer change is not lost when an
+subtree. Disjoint directory events keep separate scopes; all scopes are upserted
+before deletions are reconciled so cross-folder renames retain their IDs. Events are persisted with revisions so a newer change is not lost when an
 older job completes. Lost events or large bursts cause a broader reconciliation.
 Startup and periodic maintenance also reconcile metadata.
 
@@ -41,10 +42,22 @@ Renames preserve IDs and vectors when device/inode identity and the confirmed ab
 of the old path establish the match. Partial or failed scans do not delete cached results.
 Cloud-only placeholders are not materialized for indexing.
 
-One background job is active at a time. Content work yields between batches of up to
+One background job is active at a time. Metadata traversal retains its enumerator
+between slices of at most 256 entries or approximately one second, then lets other
+sources and content jobs proceed. A file event invalidates an overlapping full scan
+so a stale generation cannot delete the newly observed row. Restarting the process
+starts a fresh scan generation; partial generations never authorize deletion.
+
+Content work yields between batches of up to
 eight files or two seconds; embedding work yields between batches of up to 64 chunks
 or two seconds. Up to four texts share an embedding invocation. These budgets do not
-interrupt a parser or an inference call already in progress.
+interrupt a parser or an inference call already in progress. PDFs process up to 16
+pages or the remaining time budget per slice. Completed pages, metadata stamps, OCR
+keys, and the next page are persisted in SQLite. A restart can resume that work;
+changes to the file invalidate it. Existing successful content stays searchable until
+the replacement is complete. One in-flight OCR call can still use its page timeout.
+Status counts use coalesced asynchronous database snapshots, and favorite IDs are
+re-read only when a transactional revision changes.
 
 ## OCR isolation
 
@@ -70,15 +83,22 @@ failed OCR is not cached as a successful result.
 - File-name search uses indexed file metadata.
 - Exact content search uses SQLite FTS5/BM25.
 - Semantic search embeds the query with the local multilingual E5 model.
-- Hybrid search combines full-text and vector results.
+- Hybrid search combines full-text and vector results at document level.
+- Exact and vector candidate limits count distinct files, retaining each file's best
+  chunk. A long PDF cannot fill the candidate set and hide smaller matching files.
+- Filename queries use GRDB's cancellation-aware asynchronous readers. Superseded
+  queries interrupt their own SQL work without cancelling unrelated readers.
 
 For collections of at least 50,000 vectors, a background task may build a HNSW graph
 in memory. Its estimated budget is one eighth of physical RAM, capped at 2 GiB.
 Memory pressure discards the graph; it is rebuilt after restarting the app.
 
-Exact vector search remains available while the graph is unavailable, when revision
-tracking or memory limits prevent its use, and for filtered queries. HNSW candidates
-are checked against current database rows and reranked using exact similarity.
+Exact vector search remains available while the graph is unavailable or when
+revision tracking or memory limits prevent its use. Filtered queries can use HNSW:
+small eligible subsets use an exact search directly; broader filters expand
+the graph candidate set up to 8,192 vectors. Candidates are checked against current database
+filters and visibility, and is reranked using exact similarity. If too few eligible
+documents or chunks survive, an exact filtered search fills the request.
 Approximate candidate selection does not guarantee perfect top-k recall.
 
 ## Extraction limits

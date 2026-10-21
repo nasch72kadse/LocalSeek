@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Exercise the actual v6/v7 SQL against a minimal prior-schema fixture.
+"""Exercise the actual v6/v7/v8 SQL against a minimal prior-schema fixture.
 
 This supplements XCTest; it does not exercise Swift/GRDB migration registration.
-Only the raw SQL literals are extracted, with the four trigger substitutions.
+Only the raw SQL literals are extracted, with the vector-trigger substitutions.
 """
 from pathlib import Path
 import json
@@ -11,7 +11,8 @@ import sqlite3
 
 source = (Path(__file__).resolve().parents[1] / "Shared/Persistence/IndexDatabase.swift").read_text()
 v6 = source.split('registerMigration("v6-incremental-indexing")', 1)[1].split('registerMigration("v7-vector-change-log")', 1)[0]
-v7 = source.split('registerMigration("v7-vector-change-log")', 1)[1].split("return migrator", 1)[0]
+v7 = source.split('registerMigration("v7-vector-change-log")', 1)[1].split('registerMigration("v8-bounded-work-and-status")', 1)[0]
+v8 = source.split('registerMigration("v8-bounded-work-and-status")', 1)[1].split("return migrator", 1)[0]
 sql6 = re.findall(r'db.execute\(sql: """(.*?)"""\)', v6, re.S)
 sql7 = re.findall(r'db.execute\(sql: """(.*?)"""\)', v7, re.S)
 assert len(sql6) == 1 and len(sql7) == 2
@@ -65,5 +66,19 @@ db.execute("UPDATE vector_state SET revision=100001 WHERE modelId='m'")
 db.execute("INSERT INTO chunk_vectors_v1 VALUES(2,'m',X'1234')")
 assert db.execute("SELECT revision FROM vector_state WHERE modelId='m'").fetchone() == (100002,)
 assert db.execute("SELECT COUNT(*) FROM vector_changes WHERE modelId='m'").fetchone() == (2,)
+sql8 = re.findall(r'db.execute\(sql: """(.*?)"""\)', v8, re.S)
+assert len(sql8) == 1
+db.executescript("CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE favorites(fileId INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE);")
+db.executescript(sql8[0])
+db.execute("INSERT INTO sources VALUES('new')")
+db.execute("INSERT INTO files VALUES(3,'new','doc.pdf','doc.pdf',10,1)")
+db.execute("INSERT INTO favorites VALUES(3)")
+assert db.execute("SELECT value FROM settings WHERE key='favoritesRevision'").fetchone() == ('1',)
+db.execute("INSERT INTO pdf_progress(fileId,mtime,size,version,nextPage,totalPages,bytes) VALUES(3,1,10,'v',1,2,4)")
+db.execute("INSERT INTO pdf_pages VALUES(3,1,'text',0)")
+db.execute("DELETE FROM files WHERE id=3")
+assert db.execute("SELECT COUNT(*) FROM pdf_pages").fetchone() == (0,)
+assert db.execute("SELECT COUNT(*) FROM pdf_progress").fetchone() == (0,)
+assert db.execute("SELECT value FROM settings WHERE key='favoritesRevision'").fetchone() == ('2',)
 print(json.dumps(dict(rawMigrationSQLPassed=True, triggers=len(triggers), sqlite=sqlite3.sqlite_version,
-                     scope="v6/v7 raw SQL; minimal fixture; not Swift/GRDB integration")))
+                     scope="v6/v7/v8 raw SQL; minimal fixture; not Swift/GRDB integration")))

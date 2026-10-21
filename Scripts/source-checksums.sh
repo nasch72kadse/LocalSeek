@@ -13,7 +13,7 @@ git ls-files --cached --others --exclude-standard -- \
   Scripts/source-checksums.sh Scripts/verify-bundle.sh Scripts/check-bundle-privacy.py Scripts/verify-artifact.sh Scripts/ci \
   .github/workflows/build.yml \
   Models/manifest.json Models/native-dependencies.json Licenses \
-  README.md THIRD_PARTY_NOTICES.md docs/INSTALLATION.md \
+  README.md THIRD_PARTY_NOTICES.md docs/INSTALLATION.md docs/releases \
   | LC_ALL=C sort | while IFS= read -r source; do
     shasum -a 256 "$source"
 done

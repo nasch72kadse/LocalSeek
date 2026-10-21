@@ -32,9 +32,10 @@ or a separate search server.
 - **Read documents and scans.** Extract text from PDFs, Office files, email, text files,
   and images. Apple Vision handles OCR in an isolated helper process.
 - **Keep up with changes.** Process file-system events, preserve unchanged embeddings,
-  cache OCR results, and resume queued work after a restart.
+  cache OCR results, resume PDFs after a restart, and keep unrelated folders out
+  of targeted change scans.
 - **Search larger collections.** SQLite/FTS5 stores the index; an optional in-memory
-  HNSW index accelerates vector search when the collection grows.
+  HNSW index accelerates vector search, including filtered queries, when the collection grows.
 - **Work from the keyboard.** Open search with **⌘⇧Space**, filter results, preview files,
   mark favorites, and reveal originals in Finder.
 - **Install once.** The DMG includes the model, OCR helper, native libraries, and Metal

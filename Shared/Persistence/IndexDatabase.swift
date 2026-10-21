@@ -277,6 +277,27 @@ public final class IndexDatabase: Sendable {
                     """)
             }
         }
+        migrator.registerMigration("v8-bounded-work-and-status") { db in
+            try db.execute(sql: """
+                CREATE TABLE pdf_progress (
+                    fileId INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+                    mtime DATETIME, size INTEGER NOT NULL, identity TEXT, version TEXT NOT NULL,
+                    nextPage INTEGER NOT NULL, totalPages INTEGER NOT NULL, bytes INTEGER NOT NULL,
+                    title TEXT, ocrKeys TEXT NOT NULL DEFAULT '[]');
+                CREATE TABLE pdf_pages (
+                    fileId INTEGER NOT NULL REFERENCES pdf_progress(fileId) ON DELETE CASCADE,
+                    page INTEGER NOT NULL, text TEXT NOT NULL, isOCR INTEGER NOT NULL,
+                    PRIMARY KEY(fileId, page));
+                CREATE TRIGGER favorites_revision_insert AFTER INSERT ON favorites BEGIN
+                    INSERT INTO settings(key,value) VALUES('favoritesRevision', '1')
+                    ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1;
+                END;
+                CREATE TRIGGER favorites_revision_delete AFTER DELETE ON favorites BEGIN
+                    INSERT INTO settings(key,value) VALUES('favoritesRevision', '1')
+                    ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1;
+                END;
+                """)
+        }
         return migrator
     }
 
@@ -478,7 +499,7 @@ public final class IndexDatabase: Sendable {
     /// SQL/FTS5 — der FTS5-Ausdruck wird aus `FTS5Pattern`-Teilen zusammengesetzt,
     /// Filter als gebundene Parameter übergeben. Liefert pro Treffer Datei,
     /// Fundstelle, markiertes Snippet und BM25-Score, sortiert nach Relevanz.
-    public func searchChunks(_ rawQuery: String, limit: Int = 100, filters: SearchFilters = SearchFilters()) throws -> [ContentSearchHit] {
+    public func searchChunks(_ rawQuery: String, limit: Int = 100, filters: SearchFilters = SearchFilters(), distinctDocuments: Bool = false) throws -> [ContentSearchHit] {
         let parsed = QueryParser.parse(rawQuery)
         guard parsed.hasTextMatch, let pattern = Self.ftsPattern(for: parsed) else { return [] }
 
@@ -488,7 +509,7 @@ public final class IndexDatabase: Sendable {
         args.append(max(0, limit))
 
         return try dbPool.read { db in
-            let rows = try Row.fetchAll(db, sql: """
+            let select = """
                 SELECT chunks.id        AS chunkId,
                        files.id         AS fileId,
                        files.sourceId   AS sourceId,
@@ -505,8 +526,13 @@ public final class IndexDatabase: Sendable {
                 JOIN files  ON files.id  = chunks.fileId
                 WHERE \(whereClause)
                 ORDER BY bm25
-                LIMIT ?
-                """, arguments: StatementArguments(args))
+                """
+            let sql = distinctDocuments ? """
+                WITH matches AS MATERIALIZED (\(select)),
+                ranked AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY fileId ORDER BY bm25, chunkId) AS documentRank FROM matches)
+                SELECT * FROM ranked WHERE documentRank = 1 ORDER BY bm25, chunkId LIMIT ?
+                """ : select + " LIMIT ?"
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
 
             return rows.map { row in
                 ContentSearchHit(
@@ -538,6 +564,14 @@ public final class IndexDatabase: Sendable {
 
     /// Dateinamen-Suche. Ab 3 Zeichen über Trigram-FTS5 (Substring), sonst LIKE-Fallback.
     public func searchFilenames(_ rawQuery: String, limit: Int = 200, filters: SearchFilters = SearchFilters()) throws -> [FileRecord] {
+        try dbPool.read { try Self.filenameRows(rawQuery, limit: limit, filters: filters, in: $0) }
+    }
+
+    public func searchFilenamesAsync(_ rawQuery: String, limit: Int = 200, filters: SearchFilters = SearchFilters()) async throws -> [FileRecord] {
+        try await dbPool.read { try Self.filenameRows(rawQuery, limit: limit, filters: filters, in: $0) }
+    }
+
+    private static func filenameRows(_ rawQuery: String, limit: Int, filters: SearchFilters, in db: Database) throws -> [FileRecord] {
         let parsed = QueryParser.parse(rawQuery)
         let constraints = Self.fileConstraints(parsed, filters: filters)
         let terms = parsed.terms + parsed.phrases
@@ -557,13 +591,11 @@ public final class IndexDatabase: Sendable {
         }
         args.append(parsed.searchText)
         args.append(max(0, limit))
-        return try dbPool.read { db in
-            try FileRecord.fetchAll(db, sql: """
+        return try FileRecord.fetchAll(db, sql: """
                 SELECT files.* FROM files \(join) WHERE \(conditions.joined(separator: " AND "))
                 ORDER BY CASE WHEN lower(files.filename) = lower(?) THEN 0 ELSE 1 END,
                          length(files.filename), files.filename COLLATE NOCASE, files.id LIMIT ?
                 """, arguments: StatementArguments(args))
-        }
     }
 
     static func escapeLike(_ s: String) -> String {

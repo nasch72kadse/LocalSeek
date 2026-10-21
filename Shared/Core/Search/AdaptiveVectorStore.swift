@@ -69,7 +69,17 @@ public final class AdaptiveVectorIndex: @unchecked Sendable {
     private weak var database: IndexDatabase?
     public let minimumVectors: Int
     public let memoryBudget: UInt64
+    private let maximumCandidates: Int
     private let lock = NSLock()
+    private struct FilterPlan {
+        let modelId: String
+        let revision: Int64
+        let filters: SearchFilters
+        let parsed: ParsedQuery
+        let exact: Bool
+        let expires: Double
+    }
+    private var filterPlans: [FilterPlan] = []
     private var ready: Ready?
     private var working: ANNBuildState?
     private var preparing = false
@@ -78,9 +88,10 @@ public final class AdaptiveVectorIndex: @unchecked Sendable {
     private var generation: UInt64 = 0
     private var pressureSource: (any DispatchSourceMemoryPressure)?
 
-    public init(database: IndexDatabase, minimumVectors: Int = 50_000, memoryBudget: UInt64? = nil) {
+    public init(database: IndexDatabase, minimumVectors: Int = 50_000, memoryBudget: UInt64? = nil, maximumCandidates: Int = 8192) {
         self.database = database
         self.minimumVectors = max(1, minimumVectors)
+        self.maximumCandidates = min(8192, max(1, maximumCandidates))
         self.memoryBudget = memoryBudget ?? min(2 * 1024 * 1024 * 1024, ProcessInfo.processInfo.physicalMemory / 8)
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global(qos: .utility))
         source.setEventHandler { [weak self] in
@@ -99,7 +110,7 @@ public final class AdaptiveVectorIndex: @unchecked Sendable {
     public var isReady: Bool { lock.withLock { ready != nil } }
 
     public func release() {
-        lock.withLock { ready = nil; working = nil; generation &+= 1 }
+        lock.withLock { ready = nil; working = nil; filterPlans.removeAll(); generation &+= 1 }
         try? database?.stopVectorTracking()
     }
 
@@ -204,17 +215,52 @@ public final class AdaptiveVectorIndex: @unchecked Sendable {
         return true
     }
 
-    func nearest(_ query: [Float], modelId: String, limit: Int) throws -> [VectorMatch]? {
+    private func preferExact(_ current: Ready, filters: SearchFilters, parsed: ParsedQuery, database: IndexDatabase) throws -> Bool {
+        guard !filters.isEmpty || parsed.hasFilters else { return false }
+        var criteria = parsed
+        criteria.terms = []; criteria.phrases = []
+        let now = ProcessInfo.processInfo.systemUptime
+        if let known = lock.withLock({ filterPlans.first { $0.modelId == current.modelId && $0.revision == current.revision && $0.filters == filters && $0.parsed == criteria && $0.expires > now } }) {
+            return known.exact
+        }
+        // Scanning a small eligible subset is cheaper than repeatedly widening
+        // a graph query. Cache only the plan, never results or visibility checks.
+        let threshold = min(16_384, max(512, current.graph.count / 8))
+        let count = try database.vectorCandidateCount(modelId: current.modelId, dimensions: current.dimensions,
+            limit: threshold + 1, filters: filters, parsed: criteria, documents: false)
+        let exact = count <= threshold
+        lock.withLock {
+            filterPlans.removeAll { $0.expires <= now }
+            if filterPlans.count >= 16 { filterPlans.removeFirst() }
+            filterPlans.append(FilterPlan(modelId: current.modelId, revision: current.revision,
+                filters: filters, parsed: criteria, exact: exact, expires: now + 30))
+        }
+        return exact
+    }
+
+    func nearest(_ query: [Float], modelId: String, limit: Int, filters: SearchFilters = .init(),
+                 parsed: ParsedQuery = .init(), documents: Bool = false) throws -> [VectorMatch]? {
         guard let database, let current = lock.withLock({ ready }),
               current.modelId == modelId, current.dimensions == query.count,
               try database.vectorRevision(modelId: modelId) == current.revision else { return nil }
+        if try preferExact(current, filters: filters, parsed: parsed, database: database) { return nil }
         let boundedLimit = min(2000, max(0, limit))
-        let expected = min(boundedLimit, current.graph.count)
-        guard let ids = current.graph.search(query, limit: min(8192, max(256, boundedLimit * 4))) else { return nil }
-        let matches = try database.rankVectorCandidates(ids, query: query, modelId: modelId, limit: boundedLimit)
-        guard matches.count >= expected,
-              try database.vectorRevision(modelId: modelId) == current.revision else { return nil }
-        return matches
+        let expected = try database.vectorCandidateCount(modelId: modelId, dimensions: query.count,
+            limit: boundedLimit, filters: filters, parsed: parsed, documents: documents)
+        guard expected > 0 else { return [] }
+        let maximum = min(maximumCandidates, current.graph.count)
+        var count = min(maximum, max(256, boundedLimit * 4))
+        while count > 0 {
+            try Task.checkCancellation()
+            guard let ids = current.graph.search(query, limit: count) else { return nil }
+            let matches = try database.rankVectorCandidates(ids, query: query, modelId: modelId,
+                limit: boundedLimit, filters: filters, parsed: parsed, documents: documents)
+            guard try database.vectorRevision(modelId: modelId) == current.revision else { return nil }
+            if matches.count >= expected { return matches }
+            if count >= maximum || (count >= 1024 && matches.count * 4 < expected) { break }
+            count = min(maximum, count * 2)
+        }
+        return nil // Selective filters or concentrated documents require an exact fallback.
     }
 }
 
@@ -234,11 +280,20 @@ public struct AdaptiveVectorStore: VectorStore {
     }
     public func nearest(to query: [Float], modelId: String, limit: Int,
                         matching filters: SearchFilters, parsedQuery: ParsedQuery) throws -> [VectorMatch] {
-        if limit > 0, filters.isEmpty, !parsedQuery.hasFilters {
-            if let matches = try index.nearest(query, modelId: modelId, limit: limit) { return matches }
+        if limit > 0 {
+            if let matches = try index.nearest(query, modelId: modelId, limit: limit, filters: filters, parsed: parsedQuery) { return matches }
             index.requestBuild(modelId: modelId)
         }
         return try BruteForceVectorStore(db: db).nearest(to: query, modelId: modelId, limit: limit,
                                                        matching: filters, parsedQuery: parsedQuery)
+    }
+    public func nearestDocuments(to query: [Float], modelId: String, limit: Int,
+                                 matching filters: SearchFilters, parsedQuery: ParsedQuery) throws -> [VectorMatch] {
+        if limit > 0 {
+            if let matches = try index.nearest(query, modelId: modelId, limit: limit, filters: filters, parsed: parsedQuery, documents: true) { return matches }
+            index.requestBuild(modelId: modelId)
+        }
+        return try BruteForceVectorStore(db: db).nearestDocuments(to: query, modelId: modelId, limit: limit,
+                                                                matching: filters, parsedQuery: parsedQuery)
     }
 }

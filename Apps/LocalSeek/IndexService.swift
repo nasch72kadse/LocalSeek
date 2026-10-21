@@ -29,15 +29,20 @@ final class IndexService: ObservableObject {
     private var firstPendingChange: Date?
     private var debounceTask: Task<Void, Never>?
     private var backgroundStarted = false
+    private var statusTask: Task<Void, Never>?
+    private var statusRequested = false
+    private var lastStatusRead = -Double.infinity
+    private var favoritesRevision: Int64?
 
     init(database: IndexDatabase? = nil, modelURL: URL? = nil, databaseURL: URL? = nil,
          control suppliedControl: IndexControl? = nil) {
         let fallback = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/LocalSeek/index.sqlite", isDirectory: false)
         self.databaseURL = database?.storageURL ?? databaseURL ?? (try? IndexDatabase.defaultURL()) ?? fallback
+        var initialSources: [SourceRecord] = []
         do {
             db = try database ?? IndexDatabase(url: self.databaseURL)
-            if let db { try SourceManifest.save(try db.allSources(), for: self.databaseURL) }
+            if let db { initialSources = try db.allSources(); try SourceManifest.save(initialSources, for: self.databaseURL) }
         } catch {
             db = nil
             lastError = "Der Index konnte nicht geöffnet werden. Du kannst ihn aus den gemerkten Quellen neu aufbauen."
@@ -53,6 +58,9 @@ final class IndexService: ObservableObject {
                 try await worker.perform(job, checkpoint: gate)
             }
         }
+        sourceRoots = Dictionary(uniqueKeysWithValues: initialSources.map { ($0.id, $0.path) })
+        sources = initialSources.map { SourceStatusDTO(id: $0.id, displayPath: ($0.path as NSString).lastPathComponent,
+            state: Self.mapState($0.scanStatus), fileCount: 0, isEnabled: $0.enabled, lastScan: $0.lastScan) }
         reload()
         startWatching()
         modelTask = Task { [weak self] in
@@ -220,6 +228,8 @@ final class IndexService: ObservableObject {
             modelTask?.cancel()
             await modelTask?.value
             await scheduler?.stop()
+            statusTask?.cancel(); await statusTask?.value
+            favoritesRevision = nil
             await embeddingProvider?.unload()
             do {
                 if let db { try db.rebuildDerivedIndex() }
@@ -253,7 +263,7 @@ final class IndexService: ObservableObject {
     func searchAsync(_ query: String, filters: SearchFilters = SearchFilters(), limit: Int = 50) async -> [FileRecord] {
         guard let db else { return [] }
         await control.beginInteractive()
-        let result = await Task.detached { (try? db.searchFilenames(query, limit: limit, filters: filters)) ?? [] }.value
+        let result = (try? await db.searchFilenamesAsync(query, limit: limit, filters: filters)) ?? []
         await control.endInteractive()
         return result
     }
@@ -298,7 +308,8 @@ final class IndexService: ObservableObject {
     func refresh() { Task { [weak self] in await self?.reloadAsync() } }
 
     func shutdown() async {
-        modelTask?.cancel(); debounceTask?.cancel()
+        modelTask?.cancel(); debounceTask?.cancel(); statusTask?.cancel()
+        await statusTask?.value
         watcher?.stop()
         await modelTask?.value
         await scheduler?.stop()
@@ -349,20 +360,43 @@ final class IndexService: ObservableObject {
     }
 
     private func reload() {
-        guard let db else { return }
-        do {
-            let records = try db.allSources()
-            sourceRoots = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.path) })
-            sources = try records.map { record in
-                SourceStatusDTO(id: record.id, displayPath: (record.path as NSString).lastPathComponent,
-                    state: Self.mapState(record.scanStatus), fileCount: try db.fileCount(forSource: record.id), isEnabled: record.enabled, lastScan: record.lastScan)
-            }
-            status = IndexStatusDTO(fileCount: try db.fileCount(), chunkCount: try db.chunkCount(),
-                embeddingCount: try activeModelId.map { try db.embeddingCount(modelId: $0) } ?? 0,
-                sourceCount: try db.sourceCount(), isPaused: isPaused)
-            jobs = try db.jobCounts()
-            favorites = try db.favoriteIDs()
-        } catch { lastError = "Der Indexstatus konnte nicht gelesen werden." }
+        statusRequested = true
+        guard statusTask == nil, let db else { return }
+        let modelId = activeModelId
+        let revision = favoritesRevision
+        let delay = max(0, 0.5 - (ProcessInfo.processInfo.systemUptime - lastStatusRead))
+        statusTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+                statusRequested = false
+                let snapshot = try await db.statusSnapshot(modelId: modelId, knownFavoritesRevision: revision)
+                try Task.checkCancellation()
+                guard self.db === db, activeModelId == modelId else { statusRequested = true; finishStatusRead(); return }
+                let roots = Dictionary(uniqueKeysWithValues: snapshot.sources.map { ($0.id, $0.path) })
+                let watchChanged = roots != sourceRoots || sources.filter(\.isEnabled).map(\.id) != snapshot.sources.filter(\.enabled).map(\.id)
+                sourceRoots = roots
+                sources = snapshot.sources.map { record in
+                    SourceStatusDTO(id: record.id, displayPath: (record.path as NSString).lastPathComponent,
+                        state: Self.mapState(record.scanStatus), fileCount: snapshot.fileCounts[record.id] ?? 0,
+                        isEnabled: record.enabled, lastScan: record.lastScan)
+                }
+                status = IndexStatusDTO(fileCount: snapshot.fileCounts.values.reduce(0, +), chunkCount: snapshot.chunks,
+                    embeddingCount: snapshot.embeddings, sourceCount: snapshot.sources.count, isPaused: isPaused)
+                jobs = snapshot.jobs
+                if let values = snapshot.favorites { favorites = values }
+                favoritesRevision = snapshot.favoritesRevision
+                lastStatusRead = ProcessInfo.processInfo.systemUptime
+                if watchChanged { startWatching() }
+            } catch is CancellationError { statusRequested = false }
+            catch { lastError = "Der Indexstatus konnte nicht gelesen werden."; statusRequested = false }
+            finishStatusRead()
+        }
+    }
+
+    private func finishStatusRead() {
+        statusTask = nil
+        if statusRequested { reload() }
     }
 
     private func reloadAsync() async {

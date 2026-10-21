@@ -65,11 +65,35 @@ extension IndexDatabase {
                 }
         }
     }
+    func vectorCandidateCount(modelId: String, dimensions: Int, limit: Int,
+                              filters: SearchFilters, parsed: ParsedQuery, documents: Bool) throws -> Int {
+        let constraints = Self.fileConstraints(parsed, filters: filters)
+        let sql: String
+        let args: [any DatabaseValueConvertible]
+        if documents {
+            sql = """
+                SELECT COUNT(*) FROM (SELECT files.id FROM files WHERE \(constraints.sql)
+                AND EXISTS (SELECT 1 FROM chunks JOIN chunk_vectors_v1 cv ON cv.chunkId = chunks.id
+                WHERE chunks.fileId = files.id AND cv.modelId = ? AND length(cv.embedding) = ? AND cv.norm > 0) LIMIT ?)
+                """
+            args = constraints.args + [modelId, dimensions * 4, limit]
+        } else {
+            sql = """
+                SELECT COUNT(*) FROM (SELECT cv.chunkId FROM chunk_vectors_v1 cv
+                JOIN chunks ON chunks.id = cv.chunkId JOIN files ON files.id = chunks.fileId
+                WHERE cv.modelId = ? AND length(cv.embedding) = ? AND cv.norm > 0 AND \(constraints.sql) LIMIT ?)
+                """
+            args = [modelId, dimensions * 4] + constraints.args + [limit]
+        }
+        return try dbPool.read { try Int.fetchOne($0, sql: sql, arguments: StatementArguments(args)) ?? 0 }
+    }
+
     /// Re-rank ANN candidates against authoritative, current rows and visibility.
-    func rankVectorCandidates(_ ids: [Int64], query: [Float], modelId: String, limit: Int) throws -> [VectorMatch] {
-        let constraints = Self.fileConstraints(ParsedQuery(), filters: SearchFilters())
+    func rankVectorCandidates(_ ids: [Int64], query: [Float], modelId: String, limit: Int,
+                              filters: SearchFilters = .init(), parsed: ParsedQuery = .init(), documents: Bool = false) throws -> [VectorMatch] {
+        let constraints = Self.fileConstraints(parsed, filters: filters)
         return try dbPool.read { db in
-            var matches: [VectorMatch] = []
+            var heap = VectorHeap(capacity: min(2000, limit))
             for offset in stride(from: 0, to: ids.count, by: 512) {
                 try Task.checkCancellation()
                 let group = Array(ids[offset..<min(offset + 512, ids.count)])
@@ -78,7 +102,7 @@ extension IndexDatabase {
                 args.append(contentsOf: group)
                 args.append(contentsOf: constraints.args)
                 let rows = try Row.fetchAll(db, sql: """
-                    SELECT cv.chunkId, cv.embedding FROM chunk_vectors_v1 cv
+                    SELECT cv.chunkId, cv.embedding, files.id AS fileId FROM chunk_vectors_v1 cv
                     JOIN chunks ON chunks.id = cv.chunkId JOIN files ON files.id = chunks.fileId
                     WHERE cv.modelId = ? AND length(cv.embedding) = ? AND cv.norm > 0
                     AND cv.chunkId IN (\(placeholders)) AND \(constraints.sql)
@@ -86,10 +110,10 @@ extension IndexDatabase {
                 for row in rows {
                     let vector = VectorBlob.vector(from: row["embedding"])
                     let score = BruteForceVectorStore.cosine(query, vector)
-                    if score.isFinite { matches.append(.init(chunkId: row["chunkId"], score: score)) }
+                    if score.isFinite { heap.offer(.init(chunkId: row["chunkId"], score: score), key: documents ? row["fileId"] : nil) }
                 }
             }
-            return Array(matches.sorted { $0.score == $1.score ? $0.chunkId < $1.chunkId : $0.score > $1.score }.prefix(limit))
+            return heap.ranked
         }
     }
 }

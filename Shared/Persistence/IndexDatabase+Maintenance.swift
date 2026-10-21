@@ -79,6 +79,7 @@ extension IndexDatabase {
 
     public func rebuildDerivedIndex() throws {
         try dbPool.write { db in
+            try db.execute(sql: "DELETE FROM pdf_progress")
             try db.execute(sql: "DELETE FROM chunks")
             try db.execute(sql: "UPDATE files SET contentMtime = NULL, contentVersion = ''")
             try db.execute(sql: "DELETE FROM file_failures")

@@ -48,6 +48,7 @@ extension IndexDatabase {
                              usedOCRKeys: Set<String>? = nil) throws {
         try dbPool.write { db in
             try Self.writeChunks(fileId: fileId, chunks: chunks, in: db)
+            try db.execute(sql: "DELETE FROM pdf_progress WHERE fileId = ?", arguments: [fileId])
             try db.execute(sql: "UPDATE files SET contentMtime = ?, contentVersion = ?, contentSize = size, contentIdentity = fileIdentity WHERE id = ?",
                            arguments: [mtime, version, fileId])
             try db.execute(sql: "DELETE FROM file_failures WHERE fileId = ?", arguments: [fileId])
