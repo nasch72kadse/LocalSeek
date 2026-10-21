@@ -73,9 +73,8 @@ def run_tests():
     # A failed rerun must never leave a previous successful receipt usable.
     RECEIPT.unlink(missing_ok=True)
     before = inputs()
-    logged(["bash", "Scripts/sparkle-tools.sh"], "sparkle-tools.log", timeout=180)
-    tools = logged([sys.executable, '-m', 'unittest', 'discover', '-s', 'Tests/BuildTools', '-v'],
-                   'tools-tests.log', timeout=120).read_text()
+    tools = logged(['bash', 'Scripts/test-build-tools.sh'],
+                   'tools-tests.log', timeout=240).read_text()
     count = re.search(r'^Ran (\d+) tests? in ', tools, re.M)
     if not count or int(count[1]) == 0 or re.search(r'\bskipped\b', tools):
         raise RuntimeError('Build-/Netzwerk-Regressionsprüfungen fehlen oder wurden übersprungen.')
